@@ -1,8 +1,12 @@
 //! 服务端逻辑.
 
+use std::borrow::Cow;
+
+use reqwest::header::COOKIE;
 use reqwest::{Client, Method};
 use serde_json::json;
 
+use crate::Cookies;
 use crate::config::RoomConfig;
 use crate::error::{Error, Result};
 
@@ -20,6 +24,7 @@ struct QueryResponse {
 pub struct Querier {
     config: RoomConfig,
     x_csrf_token: String,
+    cookies: Cookies,
     client: Client,
 }
 
@@ -28,6 +33,7 @@ impl Querier {
         Querier {
             config,
             x_csrf_token: "".into(),
+            cookies: Default::default(),
             client: Default::default(),
         }
     }
@@ -36,13 +42,15 @@ impl Querier {
         Querier {
             config,
             x_csrf_token: "".into(),
+            cookies: Default::default(),
             client,
         }
     }
 
-    /// 重新获得有效的 x_csrf_token.
-    pub fn refresh_token() -> Result<()> {
-        todo!()
+    /// 重新设置有效的 x_csrf_token 和 cookies.
+    pub fn refresh(&mut self, x_csrf_token: String, cookies: Cookies) {
+        self.x_csrf_token = x_csrf_token;
+        self.cookies = cookies.sanitize();
     }
 
     /// 查询查询当前剩余电量 (度)
@@ -58,6 +66,13 @@ impl Querier {
             .request(
                 Method::POST,
                 "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricbill",
+            )
+            .header(
+                COOKIE,
+                format!(
+                    "JSESSIONID={}; cookie={}",
+                    self.cookies.j_session_id, self.cookies.cookie
+                ),
             )
             .header("X-CSRF-TOKEN", &self.x_csrf_token)
             // todo 解决 cookies 登录状态问题
