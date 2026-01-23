@@ -1,14 +1,17 @@
 use clap::Parser;
-use ecnu_power_usage::{
-    config::{self, load_room_config},
-    server::Querier,
-};
+use ecnu_power_usage::server::run_app;
+use std::net::SocketAddr;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct AppArgs {
-    #[clap(short, long, help="config dir path", default_value = config::DEFAULT_CONFIG_DIR)]
-    config: String,
+    #[clap(
+        short,
+        long,
+        help = "service bind address",
+        default_value = "0.0.0.0:20531"
+    )]
+    bind: SocketAddr,
 }
 
 struct App {
@@ -21,9 +24,9 @@ impl App {
     }
 
     async fn run(self) -> anyhow::Result<()> {
-        let room_config = load_room_config(&self.args.config)?;
-        let querier = Querier::new(room_config);
-        dbg!(querier.query_electricity_balance().await)?;
+        tracing_subscriber::fmt().init();
+
+        run_app(self.args.bind).await?;
         Ok(())
     }
 }

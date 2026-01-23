@@ -1,9 +1,9 @@
-use anyhow::Context;
-
 use crate::error::{Error, Result};
-use std::{fs, ops::Deref, path::Path};
+use serde::Deserialize;
+use std::path::Path;
+use tokio::fs;
 
-#[derive(serde::Deserialize)]
+#[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomConfig {
     pub room_no: String,
@@ -11,16 +11,16 @@ pub struct RoomConfig {
     pub elcbuis: String,
 }
 
-pub const DEFAULT_CONFIG_DIR: &str = "~/.config/ecnu-power-usage/";
+pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+pub const RECORDS_FILENAME: &str = "records.csv";
+pub const ROOM_CONFIG_FILENAME: &str = "room.toml";
 
-pub fn load_room_config(config_dir: impl AsRef<str>) -> Result<RoomConfig> {
-    let config_dir = config_dir.as_ref();
-    let config_dir = shellexpand::tilde(config_dir);
-    // fs::create_dir_all(config_dir.deref())?;
-    let config_path = Path::new(config_dir.deref()).join("room.toml");
+pub async fn load_room_config(room_config_file: impl AsRef<Path>) -> Result<RoomConfig> {
+    let config_path = room_config_file.as_ref();
     let room_config: RoomConfig = toml::from_str(
         &fs::read_to_string(&config_path)
-            .map_err(|e| Error::ConfigFileReadError(config_path, e.to_string()))?,
+            .await
+            .map_err(|e| Error::ConfigFileReadError(config_path.into(), e.to_string()))?,
     )?;
     Ok(room_config)
 }

@@ -1,17 +1,29 @@
 //! 服务端逻辑.
+use std::fmt::Debug;
+use std::net::SocketAddr;
 use std::ops::Sub;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
+use anyhow::Context;
+use axum::extract::State;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use chrono::{DateTime, Local};
 use reqwest::header::COOKIE;
-use reqwest::{Client, Method};
+use reqwest::{Client, Method, StatusCode};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::fs::{self, File, OpenOptions};
+use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
+use tokio::sync::RwLock;
+use tracing::{error, info};
 
-use crate::Cookies;
-use crate::config::RoomConfig;
+use crate::config::{RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig, load_room_config};
 use crate::error::{Error, Result};
+use crate::{Cookies, Records};
 
 #[derive(serde::Deserialize)]
 struct QueryResponse {
@@ -24,35 +36,48 @@ struct QueryResponse {
 }
 
 /// 用于指定宿舍电量查询.
+#[derive(Default)]
 pub struct Querier {
     config: RoomConfig,
-    x_csrf_token: String,
     cookies: Cookies,
     client: Client,
 }
 
+impl Debug for Querier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Querier")
+            .field("config", &self.config)
+            .field("cookies", &self.cookies)
+            .field("client", &self.client)
+            .finish()
+    }
+}
+
 impl Querier {
+    #[must_use]
     pub fn new(config: RoomConfig) -> Querier {
         Querier {
             config,
-            x_csrf_token: "".into(),
             cookies: Default::default(),
             client: Default::default(),
         }
     }
 
+    #[must_use]
     pub fn new_with_client(config: RoomConfig, client: Client) -> Querier {
         Querier {
             config,
-            x_csrf_token: "".into(),
             cookies: Default::default(),
             client,
         }
     }
 
-    /// 重新设置有效的 x_csrf_token 和 cookies.
-    pub fn refresh(&mut self, x_csrf_token: String, cookies: Cookies) {
-        self.x_csrf_token = x_csrf_token;
+    pub fn set_room_config(&mut self, config: RoomConfig) {
+        self.config = config;
+    }
+
+    /// 重新设置有效的 cookies.
+    pub fn refresh(&mut self, cookies: Cookies) {
         self.cookies = cookies.sanitize();
     }
 
@@ -77,7 +102,7 @@ impl Querier {
                     self.cookies.j_session_id, self.cookies.cookie
                 ),
             )
-            .header("X-CSRF-TOKEN", &self.x_csrf_token)
+            .header("X-CSRF-TOKEN", &self.cookies.x_csrf_token)
             // todo 解决 cookies 登录状态问题
             .json(&payload)
             .send()
@@ -102,6 +127,18 @@ where
 {
     out: W,
     last_time_degree_pair: Option<(DateTime<Local>, f32)>,
+}
+
+impl<W> Debug for Recorder<W>
+where
+    W: AsyncWrite + Unpin,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Recorder")
+            .field("out", &"...")
+            .field("last_time_degree_pair", &self.last_time_degree_pair)
+            .finish()
+    }
 }
 
 impl<W> Recorder<W>
@@ -133,15 +170,16 @@ where
 }
 
 impl Recorder<File> {
-    pub async fn load_records(records_path: impl AsRef<Path>) -> Result<Recorder<File>> {
+    pub async fn load_from_records(records_path: impl AsRef<Path>) -> Result<Recorder<File>> {
         let records_path = records_path.as_ref();
-        let read = OpenOptions::new().read(true).open(records_path).await?;
-        let read = BufReader::new(read);
         let mut last_line = None;
-        let mut lines = read.lines();
-        while let Some(line) = lines.next_line().await? {
-            if !line.is_empty() {
-                last_line = Some(line);
+        if let Ok(read) = OpenOptions::new().read(true).open(records_path).await {
+            let read = BufReader::new(read);
+            let mut lines = read.lines();
+            while let Some(line) = lines.next_line().await? {
+                if !line.is_empty() {
+                    last_line = Some(line);
+                }
             }
         }
         let last_time_degree_pair = if let Some(last_line) = last_line {
@@ -155,7 +193,7 @@ impl Recorder<File> {
             None
         };
         let write = OpenOptions::new()
-            .create(false)
+            .create(true)
             .append(true)
             .open(records_path)
             .await?;
@@ -164,4 +202,154 @@ impl Recorder<File> {
             last_time_degree_pair,
         })
     }
+}
+
+#[derive(Debug)]
+struct AppState {
+    querier: RwLock<Querier>,
+    recorder: RwLock<Recorder<File>>,
+    data_dir: PathBuf,
+    config_dir: PathBuf,
+}
+
+/// post room info
+async fn post_room(
+    State(state): State<Arc<AppState>>,
+    Json(room_config): Json<RoomConfig>,
+) -> StatusCode {
+    todo!("还要写入 room.csv")
+}
+
+async fn post_cookies(
+    State(state): State<Arc<AppState>>,
+    Json(cookies): Json<Cookies>,
+) -> StatusCode {
+    todo!("")
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+struct RecordsResponse {
+    records: Option<Records>,
+    msg: String,
+}
+
+async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<RecordsResponse>) {
+    let records_path = state.data_dir.join(RECORDS_FILENAME);
+    match csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_path(records_path)
+    {
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(RecordsResponse {
+                records: None,
+                msg: format!("records file read error: {e:?}"),
+            }),
+        ),
+        Ok(mut rdr) => {
+            let des: csv::Result<_> = rdr.deserialize::<(DateTime<Local>, f32)>().collect();
+            match des {
+                Ok(des) => {
+                    let records = Records(des);
+                    (
+                        StatusCode::OK,
+                        Json(RecordsResponse {
+                            records: Some(records),
+                            msg: "ok".to_string(),
+                        }),
+                    )
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(RecordsResponse {
+                        records: None,
+                        msg: format!("invalid records file format: {e:}"),
+                    }),
+                ),
+            }
+        }
+    }
+}
+
+async fn record_loop(state: Arc<AppState>) -> ! {
+    let mut interval = tokio::time::interval(Duration::from_secs(10));
+    loop {
+        interval.tick().await;
+        match state.querier.read().await.query_electricity_balance().await {
+            Ok(degree) => {
+                info!("degree: {degree:.2}");
+                if let Err(e) = state.recorder.write().await.record(degree).await {
+                    error!("recording: {e:?}");
+                }
+            }
+            Err(e) => {
+                error!("querying: {e:?}");
+            }
+        }
+    }
+}
+
+/// todo: tls 支持
+/// 创建并启动后台服务.
+pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
+    const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+    let backup_data_dir = shellexpand::tilde("~/.local/share");
+    let backup_config_dir = shellexpand::tilde("~/.config");
+    let data_dir = dirs_next::data_dir()
+        .unwrap_or(backup_data_dir.to_string().into())
+        .join(PKG_NAME);
+    let config_dir = dirs_next::config_dir()
+        .unwrap_or(backup_config_dir.to_string().into())
+        .join(PKG_NAME);
+    info!("data dir: {data_dir:?}");
+    info!("config dir: {config_dir:?}");
+    let data_dir_cloned = data_dir.clone();
+    let config_dir_cloned = config_dir.clone();
+    fs::create_dir_all(&data_dir)
+        .await
+        .with_context(move || data_dir_cloned.to_string_lossy().to_string())?;
+    fs::create_dir_all(&config_dir)
+        .await
+        .with_context(move || config_dir_cloned.to_string_lossy().to_string())?;
+    let data_dir_cloned = data_dir.clone();
+    let config_dir_cloned = config_dir.clone();
+
+    let room_config = load_room_config(config_dir.join(ROOM_CONFIG_FILENAME))
+        .await
+        .with_context(move || {
+            config_dir_cloned
+                .join(ROOM_CONFIG_FILENAME)
+                .to_string_lossy()
+                .to_string()
+        });
+    info!("room config: {room_config:#?}");
+    let app_state = Arc::new(AppState {
+        querier: RwLock::new(if let Ok(room_config) = room_config {
+            Querier::new(room_config)
+        } else {
+            Querier::default()
+        }),
+        recorder: RwLock::new(
+            Recorder::load_from_records(data_dir.join(RECORDS_FILENAME))
+                .await
+                .with_context(move || {
+                    data_dir_cloned
+                        .join(RECORDS_FILENAME)
+                        .to_string_lossy()
+                        .to_string()
+                })?,
+        ),
+        data_dir,
+        config_dir,
+    });
+    let router = Router::new()
+        .route("/post-room", post(post_room))
+        .route("/post-cookies", post(post_cookies))
+        .route("/get-records", get(get_records))
+        .with_state(Arc::clone(&app_state));
+    let listener = TcpListener::bind(bind_address).await?;
+    let handle = tokio::spawn(async move { record_loop(app_state).await });
+    axum::serve(listener, router).await?;
+    handle.await?;
+    Ok(())
 }
