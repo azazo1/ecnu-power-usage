@@ -2,6 +2,7 @@ use chrono::{DateTime, FixedOffset, Local};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
+pub mod client;
 pub mod config;
 pub mod error;
 pub mod server;
