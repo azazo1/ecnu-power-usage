@@ -14,6 +14,12 @@ pub enum Error {
     TomlDeError(#[from] toml::de::Error),
     #[error("config {0} read error: {1}")]
     ConfigFileReadError(PathBuf, String),
+    #[error(transparent)]
+    ChronoParseError(#[from] chrono::ParseError),
+    #[error(transparent)]
+    ParseFloatError(#[from] std::num::ParseFloatError),
+    #[error("invalid degree records format")]
+    DegreeRecordsFormatError,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
