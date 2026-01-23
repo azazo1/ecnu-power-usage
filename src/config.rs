@@ -1,14 +1,20 @@
 use crate::error::{Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::fs;
 
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomConfig {
     pub room_no: String,
     pub elcarea: i32,
     pub elcbuis: String,
+}
+
+impl RoomConfig {
+    pub fn is_invalid(&self) -> bool {
+        self.elcarea < 0 || self.room_no.is_empty() || self.elcbuis.is_empty()
+    }
 }
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");

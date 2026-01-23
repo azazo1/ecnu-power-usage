@@ -7,6 +7,8 @@ pub enum Error {
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
     #[error(transparent)]
+    UrlParseError(#[from] url::ParseError),
+    #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
     #[error("ecnu error: {0}")]
     EcnuError(String),
@@ -28,6 +30,8 @@ pub enum Error {
     ChromiumParamBuildingError(String),
     #[error("browser page error: {0}")]
     BrowserPageError(String),
+    #[error("browser cookie error: {0}")]
+    CookieError(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

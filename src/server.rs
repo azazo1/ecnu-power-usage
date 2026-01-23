@@ -1,5 +1,5 @@
 //! 服务端逻辑.
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
 use std::ops::Sub;
 use std::path::{Path, PathBuf};
@@ -82,7 +82,11 @@ impl Querier {
     }
 
     /// 查询查询当前剩余电量 (度)
-    pub async fn query_electricity_balance(&self) -> Result<f32> {
+    /// # Errors
+    /// - [`Error::ReqwestError`][]: see: [`reqwest::RequestBuilder::send`].
+    /// - [`Error::EcnuError`][]: ECNU 未登录 / 查询接口返回错误信息.
+    /// - [`Error::NoDegree`][]: 不应出现此情况, 如果出现了可能是接口返回了错误的数据.
+    pub async fn query_electricity_degree(&self) -> Result<f32> {
         let payload = json!({
             "sysid": 1,
             "roomNo": self.config.room_no.as_str(),
@@ -104,7 +108,7 @@ impl Querier {
             )
             .header("X-CSRF-TOKEN", &self.cookies.x_csrf_token)
             // todo 解决 cookies 登录状态问题
-            .json(&payload)
+            .form(&payload)
             .send()
             .await?;
         if let Some(ct) = resp.headers().get("Content-Type")
@@ -217,6 +221,7 @@ async fn post_room(
     State(state): State<Arc<AppState>>,
     Json(room_config): Json<RoomConfig>,
 ) -> StatusCode {
+    info!("post room request");
     todo!("还要写入 room.csv")
 }
 
@@ -224,16 +229,18 @@ async fn post_cookies(
     State(state): State<Arc<AppState>>,
     Json(cookies): Json<Cookies>,
 ) -> StatusCode {
-    todo!("")
+    info!("post cookies request");
+    state.querier.write().await.refresh(cookies);
+    StatusCode::OK
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-struct RecordsResponse {
-    records: Option<Records>,
-    msg: String,
+pub struct GetRecordsResponse {
+    pub records: Option<Records>,
+    pub msg: String,
 }
 
-async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<RecordsResponse>) {
+async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<GetRecordsResponse>) {
     let records_path = state.data_dir.join(RECORDS_FILENAME);
     match csv::ReaderBuilder::new()
         .has_headers(false)
@@ -241,7 +248,7 @@ async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Re
     {
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(RecordsResponse {
+            Json(GetRecordsResponse {
                 records: None,
                 msg: format!("records file read error: {e:?}"),
             }),
@@ -253,7 +260,7 @@ async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Re
                     let records = Records(des);
                     (
                         StatusCode::OK,
-                        Json(RecordsResponse {
+                        Json(GetRecordsResponse {
                             records: Some(records),
                             msg: "ok".to_string(),
                         }),
@@ -261,7 +268,7 @@ async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Re
                 }
                 Err(e) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(RecordsResponse {
+                    Json(GetRecordsResponse {
                         records: None,
                         msg: format!("invalid records file format: {e:}"),
                     }),
@@ -271,11 +278,38 @@ async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Re
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "status", content = "content")]
+pub enum GetDegreeResponse {
+    Logined(f32),
+    NotLogined,
+    RoomConfigMissing,
+    Error(String),
+}
+
+async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<GetDegreeResponse>) {
+    info!("get degree request");
+    let querier = state.querier.read().await;
+    if querier.config.is_invalid() {
+        return (StatusCode::OK, Json(GetDegreeResponse::RoomConfigMissing));
+    }
+    match querier.query_electricity_degree().await {
+        Ok(degree) => (StatusCode::OK, Json(GetDegreeResponse::Logined(degree))),
+        Err(e) => match e {
+            Error::EcnuError(_) => (StatusCode::OK, Json(GetDegreeResponse::NotLogined)),
+            e => (
+                StatusCode::OK,
+                Json(GetDegreeResponse::Error(e.to_string())),
+            ),
+        },
+    }
+}
+
 async fn record_loop(state: Arc<AppState>) -> ! {
     let mut interval = tokio::time::interval(Duration::from_secs(10));
     loop {
         interval.tick().await;
-        match state.querier.read().await.query_electricity_balance().await {
+        match state.querier.read().await.query_electricity_degree().await {
             Ok(degree) => {
                 info!("degree: {degree:.2}");
                 if let Err(e) = state.recorder.write().await.record(degree).await {
@@ -290,6 +324,7 @@ async fn record_loop(state: Arc<AppState>) -> ! {
 }
 
 /// todo: tls 支持
+/// todo: archive records
 /// 创建并启动后台服务.
 pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
     const PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -346,6 +381,7 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
         .route("/post-room", post(post_room))
         .route("/post-cookies", post(post_cookies))
         .route("/get-records", get(get_records))
+        .route("/get-degree", get(get_degree))
         .with_state(Arc::clone(&app_state));
     let listener = TcpListener::bind(bind_address).await?;
     let handle = tokio::spawn(async move { record_loop(app_state).await });

@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, Local};
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -66,4 +66,4 @@ impl Cookies {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct Records(Vec<(DateTime<Local>, f32)>);
+pub struct Records(pub Vec<(DateTime<Local>, f32)>);
