@@ -1,27 +1,11 @@
 <template>
-    <div
-        class="h-full flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden border border-emerald-100"
-    >
-        <div
-            class="flex justify-between items-center p-4 border-b border-emerald-50 bg-emerald-50/30"
-        >
+    <div class="h-full flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden border border-emerald-100">
+        <div class="flex justify-between items-center p-4 border-b border-emerald-50 bg-emerald-50/30">
             <div class="flex items-center gap-2">
-                <button
-                    v-if="isArchiveMode"
-                    @click="$emit('back')"
-                    class="p-2 hover:bg-emerald-100 rounded-full text-emerald-600 transition"
-                >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
+                <button v-if="isArchiveMode" @click="$emit('back')"
+                    class="p-2 hover:bg-emerald-100 rounded-full text-emerald-600 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="m15 18-6-6 6-6" />
                     </svg>
                 </button>
@@ -30,51 +14,31 @@
                 </h2>
             </div>
 
-            <div
-                class="bg-emerald-200/50 p-1 rounded-full flex relative w-32 cursor-pointer"
-                @click="toggleView"
-            >
-                <div
-                    class="absolute top-1 bottom-1 w-1/2 bg-white rounded-full shadow-sm transition-all duration-300 ease-in-out"
-                    :class="
-                        viewMode === 'list'
-                            ? 'left-1'
-                            : 'left-[calc(50%-4px)] translate-x-full'
-                    "
-                ></div>
-                <div
-                    class="flex-1 text-center text-xs font-medium z-10 py-1"
-                    :class="
-                        viewMode === 'list'
-                            ? 'text-emerald-800'
-                            : 'text-emerald-600'
-                    "
-                >
+            <div class="bg-emerald-200/50 p-1 rounded-full flex relative w-32 cursor-pointer" @click="toggleView">
+                <div class="absolute top-1 bottom-1 w-1/2 bg-white rounded-full shadow-sm transition-all duration-300 ease-in-out"
+                    :class="viewMode === 'list'
+                        ? 'left-1'
+                        : 'left-[calc(50%-4px)] translate-x-full'
+                        "></div>
+                <div class="flex-1 text-center text-xs font-medium z-10 py-1" :class="viewMode === 'list'
+                    ? 'text-emerald-800'
+                    : 'text-emerald-600'
+                    ">
                     列表
                 </div>
-                <div
-                    class="flex-1 text-center text-xs font-medium z-10 py-1"
-                    :class="
-                        viewMode === 'chart'
-                            ? 'text-emerald-800'
-                            : 'text-emerald-600'
-                    "
-                >
+                <div class="flex-1 text-center text-xs font-medium z-10 py-1" :class="viewMode === 'chart'
+                    ? 'text-emerald-800'
+                    : 'text-emerald-600'
+                    ">
                     图表
                 </div>
             </div>
         </div>
 
         <div class="flex-1 overflow-hidden relative">
-            <div
-                v-if="viewMode === 'list'"
-                class="h-full overflow-auto select-none"
-                ref="listContainer"
-            >
+            <div v-if="viewMode === 'list'" class="h-full overflow-auto select-none" ref="listContainer">
                 <table class="w-full text-sm text-left">
-                    <thead
-                        class="text-xs text-emerald-600 uppercase bg-emerald-50 sticky top-0 z-10"
-                    >
+                    <thead class="text-xs text-emerald-600 uppercase bg-emerald-50 sticky top-0 z-10">
                         <tr>
                             <th class="px-6 py-3">时间</th>
                             <th class="px-6 py-3">剩余电量 (kWh)</th>
@@ -82,18 +46,12 @@
                         </tr>
                     </thead>
                     <tbody @mouseleave="endSelection">
-                        <tr
-                            v-for="(row, index) in data"
-                            :key="index"
-                            class="border-b border-emerald-50 transition-colors cursor-crosshair"
-                            :class="{
+                        <tr v-for="(row, index) in data" :key="index"
+                            class="border-b border-emerald-50 transition-colors cursor-crosshair" :class="{
                                 'bg-emerald-100': isSelected(index),
                                 'hover:bg-emerald-50': !isSelected(index),
-                            }"
-                            @mousedown="startSelection(index)"
-                            @mouseenter="updateSelection(index)"
-                            @mouseup="endSelection"
-                        >
+                            }" @mousedown="startSelection(index)" @mouseenter="updateSelection(index)"
+                            @mouseup="endSelection">
                             <td class="px-6 py-3 font-mono text-gray-600">
                                 {{ formatTime(row.timestamp) }}
                             </td>
@@ -101,19 +59,11 @@
                                 {{ row.kwh.toFixed(2) }}
                             </td>
                             <td class="px-6 py-3">
-                                <span
-                                    v-if="row.diff === 0"
-                                    class="text-gray-400"
-                                    >-</span
-                                >
-                                <span
-                                    v-else
-                                    :class="
-                                        row.diff > 0
-                                            ? 'text-green-600'
-                                            : 'text-red-500'
-                                    "
-                                >
+                                <span v-if="row.diff === 0" class="text-gray-400">-</span>
+                                <span v-else :class="row.diff > 0
+                                    ? 'text-green-600'
+                                    : 'text-red-500'
+                                    ">
                                     {{ row.diff > 0 ? "+" : ""
                                     }}{{ row.diff.toFixed(2) }}
                                 </span>
@@ -122,51 +72,35 @@
                     </tbody>
                 </table>
 
-                <div
-                    v-if="selectionStats.count > 0"
-                    class="absolute bottom-6 right-6 bg-white/90 backdrop-blur border border-emerald-200 p-4 rounded-xl shadow-lg z-20 text-sm"
-                >
+                <div v-if="selectionStats.count > 0"
+                    class="absolute bottom-6 right-6 bg-white/90 backdrop-blur border border-emerald-200 p-4 rounded-xl shadow-lg z-20 text-sm">
                     <h4 class="font-bold text-emerald-800 mb-2">
                         统计信息 ({{ selectionStats.count }} 项)
                     </h4>
                     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600">
                         <span>累计消耗:</span>
-                        <span class="font-mono text-red-500 font-medium"
-                            >{{
-                                selectionStats.totalConsumed.toFixed(2)
+                        <span class="font-mono text-red-500 font-medium">{{
+                            selectionStats.totalConsumed.toFixed(2)
                             }}
-                            kWh</span
-                        >
+                            kWh</span>
                         <span>平均速度:</span>
-                        <span class="font-mono text-emerald-600 font-medium"
-                            >{{
-                                selectionStats.avgSpeed.toFixed(2)
+                        <span class="font-mono text-emerald-600 font-medium">{{
+                            selectionStats.avgSpeed.toFixed(2)
                             }}
-                            kWh/h</span
-                        >
+                            kWh/h</span>
                         <span>时间跨度:</span>
-                        <span class="font-mono"
-                            >{{ selectionStats.timeSpan }} h</span
-                        >
+                        <span class="font-mono">{{ selectionStats.timeSpan }} h</span>
                     </div>
                     <div class="mt-2 text-xs text-gray-400 text-center">
                         点击空白处取消
                     </div>
                 </div>
 
-                <div
-                    v-if="selectionStats.count > 0"
-                    class="absolute inset-0 -z-10"
-                    @click="clearSelection"
-                ></div>
+                <div v-if="selectionStats.count > 0" class="absolute inset-0 -z-10" @click="clearSelection"></div>
             </div>
 
             <div v-else class="h-full w-full p-4">
-                <v-chart
-                    class="h-full w-full"
-                    :option="chartOption"
-                    autoresize
-                />
+                <v-chart class="h-full w-full" :option="chartOption" autoresize />
             </div>
         </div>
     </div>
@@ -481,6 +415,7 @@ button {
 button:hover {
     border-color: #396cd8;
 }
+
 button:active {
     border-color: #396cd8;
     background-color: #e8e8e8;
@@ -510,6 +445,7 @@ button {
         color: #ffffff;
         background-color: #0f0f0f98;
     }
+
     button:active {
         background-color: #0f0f0f69;
     }
