@@ -343,6 +343,9 @@ const chartOption = computed(() => {
             },
         },
         legend: {
+            top: "0%",
+            left: "center",
+            orient: "horizontal",
             data: ["剩余电量", "消耗速度"],
             textStyle: { color: "#047857", fontWeight: "bold" },
         },
