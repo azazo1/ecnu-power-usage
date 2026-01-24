@@ -1,30 +1,28 @@
 //! 服务端逻辑.
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::io::SeekFrom;
 use std::net::SocketAddr;
-use std::ops::{Range, Sub};
+use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use axum::extract::State;
-use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chromiumoxide::cdp::browser_protocol::tracing::RecordClockSyncMarkerParams;
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{DateTime, FixedOffset, Local, TimeZone};
 use reqwest::header::COOKIE;
 use reqwest::{Client, Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::fs::{self, File, OpenOptions};
+use tokio::fs::{self, File};
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
-use crate::config::{RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig};
+use crate::config::{ARCHIVE_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig};
 use crate::error::{Error, Result};
 use crate::{Cookies, Records};
 
@@ -153,7 +151,8 @@ impl<W> Recorder<W>
 where
     W: AsyncWrite + Unpin,
 {
-    async fn record_instant(&mut self, time: DateTime<Local>, degree: f32) -> Result<()> {
+    /// 写入一个时间, 剩余度数对到输出中.
+    async fn record_instant(&mut self, time: DateTime<FixedOffset>, degree: f32) -> Result<()> {
         let line = format!("{},{}\n", time.to_rfc3339(), degree);
         self.out.write_all(line.as_bytes()).await?;
         self.last_degree = Some(degree);
@@ -169,7 +168,7 @@ where
 
     /// 尝试记录一次电量变化, 只有产生了电量度数的变化才会被记录, 如果被记录了, 那么返回 Ok(true).
     pub async fn record(&mut self, degree: f32) -> Result<bool> {
-        let now_time = Local::now();
+        let now_time = Local::now().fixed_offset();
         if let Some(last_degree) = self.last_degree
             && last_degree.sub(degree).abs() < 0.01
         {
@@ -184,6 +183,8 @@ where
 impl Recorder<File> {
     /// 从可读可写文件中加载.
     pub async fn load_from_rw_file(mut file: File) -> Result<Recorder<File>> {
+        file.seek(SeekFrom::Start(0)).await?;
+
         let mut last_line = None;
 
         let mut lines = BufReader::new(&mut file).lines();
@@ -192,7 +193,6 @@ impl Recorder<File> {
                 last_line = Some(line);
             }
         }
-        file.seek(SeekFrom::Start(0)).await?;
 
         let last_degree = if let Some(last_line) = last_line {
             let (_, degree) = last_line
@@ -228,7 +228,7 @@ impl Recorder<File> {
     /// # Errors
     ///
     /// - 需要 File 输出对象是 Seekable 和 Readable 的, 不然将会返回 [`Error::IoError`].
-    pub async fn archive(&mut self, time_range: TimeRange) -> Result<Records> {
+    pub async fn archive(&mut self, time_range: TimeSpan) -> Result<Records> {
         self.out.seek(SeekFrom::Start(0)).await?;
         let records = Records::from_csv(&mut self.out).await?;
         let mut archived = Vec::new();
@@ -240,11 +240,21 @@ impl Recorder<File> {
                 retained.push(rec);
             }
         }
+        self.out.set_len(0).await?;
         self.out.seek(SeekFrom::Start(0)).await?;
         for rec in retained {
             self.record_instant(rec.0, rec.1).await?;
         }
+        self.out.seek(SeekFrom::End(0)).await?;
         Ok(Records(archived))
+    }
+
+    /// 从文件中读取已经输出的 records.
+    pub async fn read_records(&mut self) -> Result<Records> {
+        self.out.seek(SeekFrom::Start(0)).await?;
+        let rst = Records::from_csv(&mut self.out).await;
+        self.out.seek(SeekFrom::End(0)).await?;
+        rst
     }
 }
 
@@ -289,15 +299,14 @@ async fn post_cookies(
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(tag = "state", content = "content")]
+#[serde(tag = "tag", content = "content")]
 pub enum GetRecordsResponse {
     Ok(Records),
     Error(String),
 }
 
 async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<GetRecordsResponse>) {
-    let records_path = state.data_dir.join(RECORDS_FILENAME);
-    match Records::from_csv_file(records_path).await {
+    match state.recorder.write().await.read_records().await {
         Ok(records) => (StatusCode::OK, Json(GetRecordsResponse::Ok(records))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -307,7 +316,7 @@ async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Ge
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "status", content = "content")]
+#[serde(tag = "tag", content = "content")]
 pub enum GetDegreeResponse {
     Logined(f32),
     NotLogined,
@@ -334,14 +343,38 @@ async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Get
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct TimeRange {
+pub struct TimeSpan {
     /// 时间范围: 开头 (包含)
-    pub start_time: Option<DateTime<Local>>,
+    pub start_time: Option<DateTime<FixedOffset>>,
     /// 时间范围: 末尾 (不包含)
-    pub end_time: Option<DateTime<Local>>,
+    pub end_time: Option<DateTime<FixedOffset>>,
 }
 
-impl TimeRange {
+impl TimeSpan {
+    pub const ALL: Self = TimeSpan::new(None, None);
+
+    #[must_use]
+    pub const fn new(
+        start_time: Option<DateTime<FixedOffset>>,
+        end_time: Option<DateTime<FixedOffset>>,
+    ) -> Self {
+        Self {
+            start_time,
+            end_time,
+        }
+    }
+
+    #[must_use]
+    pub const fn new_before(end_time: DateTime<FixedOffset>) -> Self {
+        Self::new(None, Some(end_time))
+    }
+
+    #[must_use]
+    pub const fn new_after(start_time: DateTime<FixedOffset>) -> Self {
+        Self::new(Some(start_time), None)
+    }
+
+    #[must_use]
     pub fn contains<Tz: TimeZone>(&self, o: &DateTime<Tz>) -> bool {
         self.start_time.is_none_or(|st| st.le(o)) && self.end_time.is_none_or(|et| et.gt(o))
     }
@@ -360,26 +393,41 @@ pub enum CreateArchiveResponse {
 /// 创建 archive, 将符合时间范围的 records 保存到 archives 之中.
 async fn create_archive(
     State(state): State<Arc<AppState>>,
-    Json(time_range): Json<TimeRange>,
-) -> Json<CreateArchiveResponse> {
+    Json(time_range): Json<TimeSpan>,
+) -> (StatusCode, Json<CreateArchiveResponse>) {
     let mut recorder = state.recorder.write().await;
     match recorder.archive(time_range).await {
         Ok(mut archived) => {
             archived.sort();
             if let Some((start_time, _)) = archived.time_span() {
-                let archive_name = start_time.format("%Y-%m-%d-%H-%M.csv").to_string();
-                match Recorder::load_from_path(state.data_dir.join(&archive_name)).await {
+                let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+                let archive_name = start_time.format("%Y-%m-%d.csv").to_string();
+                fs::create_dir_all(&archive_dir).await.ok(); // 如果失败了会在下面报错;
+                match Recorder::load_from_path(archive_dir.join(&archive_name)).await {
                     Ok(mut recorder) => match recorder.record_multiple(&archived).await {
-                        Err(e) => Json(CreateArchiveResponse::Error(e.to_string())),
-                        _ => Json(CreateArchiveResponse::Saved(archive_name)),
+                        Err(e) => (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(CreateArchiveResponse::Error(e.to_string())),
+                        ),
+                        _ => (
+                            StatusCode::OK,
+                            Json(CreateArchiveResponse::Saved(archive_name)),
+                        ),
                     },
-                    Err(e) => Json(CreateArchiveResponse::Error(e.to_string())),
+                    Err(e) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(CreateArchiveResponse::Error(e.to_string())),
+                    ),
                 }
             } else {
-                Json(CreateArchiveResponse::Empty)
+                // 如果 records 无法计算出时间跨度, 那么说明其为空.
+                (StatusCode::OK, Json(CreateArchiveResponse::Empty))
             }
         }
-        Err(e) => Json(CreateArchiveResponse::Error(e.to_string())),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CreateArchiveResponse::Error(e.to_string())),
+        ),
     }
 }
 
@@ -477,10 +525,80 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
         .route("/post-cookies", post(post_cookies))
         .route("/get-records", get(get_records))
         .route("/get-degree", get(get_degree))
+        .route("/create-archive", get(create_archive))
         .with_state(Arc::clone(&app_state));
     let listener = TcpListener::bind(bind_address).await?;
     let handle = tokio::spawn(async move { record_loop(app_state).await });
     axum::serve(listener, router).await?;
     handle.await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use chrono::{FixedOffset, TimeZone, Timelike};
+    use tokio::fs::File;
+
+    use crate::{
+        Records,
+        server::{Recorder, TimeSpan},
+    };
+
+    #[tokio::test]
+    async fn archive() {
+        let records = Records::from_csv(Cursor::new(
+            "\
+2026-01-24T15:39:32.132936+08:00,33.63
+2026-01-24T17:06:32.132936+08:00,33.96
+2026-01-24T18:33:32.132936+08:00,34.45
+2026-01-24T20:09:32.132936+08:00,34.99
+2026-01-24T20:30:32.132936+08:00,35.15
+2026-01-24T20:48:32.132936+08:00,35.20
+2026-01-24T22:23:32.132936+08:00,35.57
+2026-01-24T23:25:32.132936+08:00,35.76
+2026-01-25T01:22:32.132936+08:00,36.67
+2026-01-25T03:13:32.132936+08:00,36.87
+2026-01-25T04:49:32.132936+08:00,37.56
+2026-01-25T05:10:32.132936+08:00,37.69
+2026-01-25T06:45:32.132936+08:00,38.36
+2026-01-25T07:59:32.132936+08:00,38.96
+2026-01-25T09:48:32.132936+08:00,39.66
+2026-01-25T11:31:32.132936+08:00,40.36
+2026-01-25T12:02:32.132936+08:00,40.47
+2026-01-25T13:56:32.132936+08:00,40.97
+2026-01-25T15:54:32.132936+08:00,41.32
+2026-01-25T16:09:32.132936+08:00,41.43",
+        ))
+        .await
+        .unwrap();
+        let offset = FixedOffset::east_opt(8 * 3600).unwrap();
+        let ts = TimeSpan::new_before(offset.with_ymd_and_hms(2026, 1, 25, 11, 30, 0).unwrap());
+        let file = File::from(tempfile::tempfile().unwrap());
+        let mut recorder = Recorder::load_from_rw_file(file).await.unwrap();
+        recorder.record_multiple(&records).await.unwrap();
+        let archived = recorder.archive(ts).await.unwrap();
+        #[rustfmt::skip]
+        assert_eq!(
+            archived.0,
+            vec![
+                (offset.with_ymd_and_hms(2026, 1, 24, 15, 39, 32).unwrap().with_nanosecond(132936000).unwrap(), 33.63f32),
+                (offset.with_ymd_and_hms(2026, 1, 24, 17, 6, 32).unwrap().with_nanosecond(132936000).unwrap(), 33.96f32),
+                (offset.with_ymd_and_hms(2026, 1, 24, 18, 33, 32).unwrap().with_nanosecond(132936000).unwrap(), 34.45f32),
+                (offset.with_ymd_and_hms(2026, 1, 24, 20, 9, 32).unwrap().with_nanosecond(132936000).unwrap(), 34.99f32),
+                (offset.with_ymd_and_hms(2026, 1, 24, 20, 30, 32).unwrap().with_nanosecond(132936000).unwrap(), 35.15f32),
+                (offset.with_ymd_and_hms(2026, 1, 24, 20, 48, 32).unwrap().with_nanosecond(132936000).unwrap(), 35.20f32),
+                (offset.with_ymd_and_hms(2026, 1, 24, 22, 23, 32).unwrap().with_nanosecond(132936000).unwrap(), 35.57f32),
+                (offset.with_ymd_and_hms(2026, 1, 24, 23, 25, 32).unwrap().with_nanosecond(132936000).unwrap(), 35.76f32),
+                (offset.with_ymd_and_hms(2026, 1, 25, 1, 22, 32).unwrap().with_nanosecond(132936000).unwrap(), 36.67f32),
+                (offset.with_ymd_and_hms(2026, 1, 25, 3, 13, 32).unwrap().with_nanosecond(132936000).unwrap(), 36.87f32),
+                (offset.with_ymd_and_hms(2026, 1, 25, 4, 49, 32).unwrap().with_nanosecond(132936000).unwrap(), 37.56f32),
+                (offset.with_ymd_and_hms(2026, 1, 25, 5, 10, 32).unwrap().with_nanosecond(132936000).unwrap(), 37.69f32),
+                (offset.with_ymd_and_hms(2026, 1, 25, 6, 45, 32).unwrap().with_nanosecond(132936000).unwrap(), 38.36f32),
+                (offset.with_ymd_and_hms(2026, 1, 25, 7, 59, 32).unwrap().with_nanosecond(132936000).unwrap(), 38.96f32),
+                (offset.with_ymd_and_hms(2026, 1, 25, 9, 48, 32).unwrap().with_nanosecond(132936000).unwrap(), 39.66f32),
+            ]
+        );
+    }
 }

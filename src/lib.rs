@@ -1,5 +1,5 @@
 use crate::error::Result;
-use chrono::{DateTime, Local};
+use chrono::{DateTime, FixedOffset};
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::Path, slice::Iter};
@@ -69,7 +69,7 @@ impl Cookies {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Records(pub Vec<(DateTime<Local>, f32)>);
+pub struct Records(pub Vec<(DateTime<FixedOffset>, f32)>);
 
 impl Records {
     pub fn sort(&mut self) {
@@ -77,7 +77,7 @@ impl Records {
     }
 
     /// 返回记录中最早和最晚的时间点.
-    pub fn time_span(&self) -> Option<(DateTime<Local>, DateTime<Local>)> {
+    pub fn time_span(&self) -> Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
         if self.0.is_empty() {
             None
         } else {
@@ -88,7 +88,7 @@ impl Records {
         }
     }
 
-    pub fn iter(&self) -> Iter<'_, (DateTime<Local>, f32)> {
+    pub fn iter(&self) -> Iter<'_, (DateTime<FixedOffset>, f32)> {
         self.0.iter()
     }
 
@@ -104,7 +104,7 @@ impl Records {
         let mut rsts = Vec::with_capacity(recs.size_hint().0);
         while let Some(rec) = recs.next().await {
             let rec = rec?;
-            let rec: (DateTime<Local>, f32) = rec.deserialize(None)?;
+            let rec: (DateTime<FixedOffset>, f32) = rec.deserialize(None)?;
             rsts.push(rec);
         }
         Ok(Self(rsts))
@@ -115,7 +115,7 @@ impl Records {
 mod tests {
     use std::io::Cursor;
 
-    use chrono::{DateTime, Local};
+    use chrono::DateTime;
 
     use crate::Records;
 
@@ -136,14 +136,14 @@ mod tests {
                 (
                     DateTime::from_timestamp_secs(1769236532)
                         .unwrap()
-                        .with_timezone(&Local),
+                        .fixed_offset(),
                     33.43f32
                 ),
                 (
                     // python3.14: int(datetime.datetime(year=2026, month=1, day=25).timestamp())
                     DateTime::from_timestamp_secs(1769270400)
                         .unwrap()
-                        .with_timezone(&Local),
+                        .fixed_offset(),
                     10.00f32
                 )
             ]
