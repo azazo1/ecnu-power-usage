@@ -1,7 +1,9 @@
 <template>
-    <div class="h-100 d-flex flex-column bg-white rounded-4 shadow-lg overflow-hidden border border-success border-opacity-25">
+    <div
+        class="h-100 d-flex flex-column bg-white rounded-4 shadow-lg overflow-hidden border border-success border-opacity-25">
         <!-- Header -->
-        <div class="d-flex justify-content-between align-items-center p-4 border-bottom border-success border-opacity-25 bg-light bg-opacity-50">
+        <div
+            class="d-flex justify-content-between align-items-center p-4 border-bottom border-success border-opacity-25 bg-light bg-opacity-50">
             <div class="d-flex align-items-center gap-3">
                 <button v-if="isArchiveMode" @click="$emit('back')"
                     class="btn btn-outline-success btn-sm rounded-3 d-flex align-items-center hover-scale border-2">
@@ -12,14 +14,12 @@
 
             <!-- View Toggle -->
             <div class="btn-group shadow-sm" role="group">
-                <button type="button" @click="viewMode = 'list'"
-                    class="btn d-flex align-items-center gap-2"
+                <button type="button" @click="viewMode = 'list'" class="btn d-flex align-items-center gap-2"
                     :class="viewMode === 'list' ? 'btn-success' : 'btn-outline-success'">
                     <i class="bi bi-list-ul"></i>
                     <span>列表</span>
                 </button>
-                <button type="button" @click="viewMode = 'chart'"
-                    class="btn d-flex align-items-center gap-2"
+                <button type="button" @click="viewMode = 'chart'" class="btn d-flex align-items-center gap-2"
                     :class="viewMode === 'chart' ? 'btn-success' : 'btn-outline-success'">
                     <i class="bi bi-graph-up"></i>
                     <span>图表</span>
@@ -46,13 +46,9 @@
                         </tr>
                     </thead>
                     <tbody @mouseleave="endSelection">
-                        <tr v-for="(row, index) in data" :key="index"
-                            class="cursor-crosshair transition-all"
-                            :class="{
-                                'table-success': isSelected(index),
-                            }"
-                            @mousedown="startSelection(index)"
-                            @mouseenter="updateSelection(index)"
+                        <tr v-for="(row, index) in data" :key="index" class="cursor-crosshair transition-all" :class="{
+                            'table-success': isSelected(index),
+                        }" @mousedown="startSelection(index)" @mouseenter="updateSelection(index)"
                             @mouseup="endSelection">
                             <td class="px-4 py-3 font-monospace text-secondary">
                                 {{ formatTime(row.timestamp) }}
@@ -72,7 +68,8 @@
 
                 <!-- Statistics Card -->
                 <div v-if="selectionStats.count > 0"
-                    class="position-absolute bottom-0 end-0 m-4 bg-white border-2 border-success rounded-4 shadow-lg p-4 z-3 animate-slide-in" style="min-width: 280px;">
+                    class="position-absolute bottom-0 end-0 m-4 bg-white border-2 border-success rounded-4 shadow-lg p-4 z-3 animate-slide-in"
+                    style="min-width: 280px;">
                     <h5 class="fw-bold text-success mb-3 d-flex align-items-center gap-2">
                         <i class="bi bi-graph-up-arrow"></i>
                         统计信息
@@ -116,7 +113,7 @@
                 </div>
 
                 <!-- Overlay for clearing selection -->
-                <div v-if="selectionStats.count > 0" class="position-absolute top-0 start-0 w-100 h-100" 
+                <div v-if="selectionStats.count > 0" class="position-absolute top-0 start-0 w-100 h-100"
                     style="z-index: 2;" @click="clearSelection"></div>
             </div>
 
@@ -245,26 +242,9 @@ const selectionStats = computed(() => {
 const chartOption = computed(() => {
     if (!props.data || props.data.length === 0) return {};
 
-    const timestamps = props.data.map((d) =>
-        format(d.timestamp, "MM-dd HH:mm"),
-    );
-    const kwhs = props.data.map((d) => d.kwh);
-    const speeds = props.data.map((d) => d.speed.toFixed(3));
-
-    // 计算午夜分割线
-    const markLinesData = [];
-    if (props.data.length > 0) {
-        let curr = startOfDay(props.data[0].timestamp);
-        const end = props.data[props.data.length - 1].timestamp;
-        while (curr <= end) {
-            const timeStr = format(curr, "MM-dd HH:mm");
-            markLinesData.push({
-                xAxis: timeStr,
-                lineStyle: { color: "#e5e7eb", type: "solid" },
-            });
-            curr = addDays(curr, 1);
-        }
-    }
+    // 使用时间戳作为x轴，数据格式为 [timestamp, value]
+    const kwhsData = props.data.map((d) => [d.timestamp.getTime(), d.kwh]);
+    const speedsData = props.data.map((d) => [d.timestamp.getTime(), parseFloat(d.speed.toFixed(3))]);
 
     return {
         color: ["#10b981", "#f97316"],
@@ -277,8 +257,24 @@ const chartOption = computed(() => {
             textStyle: {
                 color: "#374151",
             },
+            formatter: (params: any) => {
+                if (!params || params.length === 0) return "";
+                const date = new Date(params[0].value[0]);
+                const timeStr = format(date, "yyyy年MM月dd日 HH:mm:ss");
+                let result = `<div style="font-weight: bold; margin-bottom: 8px;">${timeStr}</div>`;
+                params.forEach((param: any) => {
+                    const value = typeof param.value[1] === "number" ? param.value[1].toFixed(2) : param.value[1];
+                    const unit = param.seriesName === "剩余电量" ? "kWh" : "kWh/h";
+                    result += `<div style="margin: 4px 0;">
+                        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${param.color};margin-right:8px;"></span>
+                        <span style="font-weight: 500;">${param.seriesName}:</span>
+                        <span style="font-weight: bold;">${value} ${unit}</span>
+                    </div>`;
+                });
+                return result;
+            },
         },
-        legend: { 
+        legend: {
             data: ["剩余电量", "消耗速度"],
             textStyle: {
                 color: "#047857",
@@ -291,13 +287,17 @@ const chartOption = computed(() => {
             { type: "slider", start: 0, end: 100, bottom: 10 },
         ],
         xAxis: {
-            type: "category",
-            data: timestamps,
+            type: "time",
             boundaryGap: false,
             axisLine: { lineStyle: { color: "#10b981", width: 2 } },
             axisLabel: {
                 color: "#047857",
                 fontWeight: "500",
+                formatter: (value: number) => {
+                    return format(new Date(value), "MM-dd\nHH:mm");
+                },
+                rotate: 0,
+                hideOverlap: true,
             },
         },
         yAxis: [
@@ -334,7 +334,7 @@ const chartOption = computed(() => {
             {
                 name: "剩余电量",
                 type: "line",
-                data: kwhs,
+                data: kwhsData,
                 smooth: true,
                 showSymbol: false,
                 lineStyle: { width: 3, shadowBlur: 8, shadowColor: "rgba(16, 185, 129, 0.3)" },
@@ -352,17 +352,12 @@ const chartOption = computed(() => {
                         ],
                     },
                 },
-                markLine: {
-                    symbol: "none",
-                    data: markLinesData,
-                    label: { show: false },
-                },
             },
             {
                 name: "消耗速度",
                 type: "line",
                 yAxisIndex: 1,
-                data: speeds,
+                data: speedsData,
                 smooth: true,
                 showSymbol: false,
                 lineStyle: { width: 3, type: "solid", shadowBlur: 8, shadowColor: "rgba(249, 115, 22, 0.4)" },
@@ -398,6 +393,7 @@ const chartOption = computed(() => {
         opacity: 0;
         transform: scale(0.95) translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: scale(1) translateY(0);
