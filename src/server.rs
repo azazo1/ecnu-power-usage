@@ -8,18 +8,23 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
+use axum::body::Body;
 use axum::extract::State;
+use axum::http::{HeaderName, Response};
+use axum::http::{StatusCode, header::COOKIE};
+use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Form, Json, Router};
 use chrono::{DateTime, FixedOffset, Local, TimeZone};
-use reqwest::header::COOKIE;
-use reqwest::{Client, Method, StatusCode};
+use reqwest::header::CONTENT_TYPE;
+use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::fs::{self, File};
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
+use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info};
 
 use crate::config::{ARCHIVE_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig};
@@ -431,6 +436,52 @@ async fn create_archive(
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct DownloadArchiveArgs {
+    name: String,
+}
+
+async fn download_archive(
+    State(state): State<Arc<AppState>>,
+    Form(args): Form<DownloadArchiveArgs>,
+) -> Response<Body> {
+    info!("download archive request: {}", args.name);
+    let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+
+    let Some(archive_name) = Path::new(&args.name).file_name() else {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header(CONTENT_TYPE, "text/plain; charset=utf-8")
+            .body(Body::new("no archive name in request".to_string()))
+            .unwrap()
+            .into_response();
+    };
+
+    match File::open(archive_dir.join(archive_name)).await {
+        Ok(file) => {
+            let stream = ReaderStream::new(file);
+            let body = Body::from_stream(stream);
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/csv")
+                .header(
+                    "Content-Disposition",
+                    format!(
+                        "attachment; filename=\"{}\"",
+                        archive_name.to_string_lossy()
+                    ),
+                )
+                .body(body)
+                .unwrap()
+                .into_response()
+        }
+        Err(_) => {
+            // 失败：返回 404 和普通文本
+            (StatusCode::NOT_FOUND, "File not found").into_response()
+        }
+    }
+}
+
 async fn record_loop(state: Arc<AppState>) -> ! {
     enum LoopState {
         Normal,
@@ -526,6 +577,7 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
         .route("/get-records", get(get_records))
         .route("/get-degree", get(get_degree))
         .route("/create-archive", get(create_archive))
+        .route("/download-archive", get(download_archive))
         .with_state(Arc::clone(&app_state));
     let listener = TcpListener::bind(bind_address).await?;
     let handle = tokio::spawn(async move { record_loop(app_state).await });
