@@ -1,11 +1,6 @@
 import {
-  format,
   parseISO,
-  differenceInHours,
   differenceInSeconds,
-  startOfDay,
-  addDays,
-  isSameDay,
 } from "date-fns";
 
 export interface ElectricityRecord {
@@ -33,14 +28,6 @@ export function parseCsvData(csvContent: string): ElectricityRecord[] {
     if (i > 0) {
       diff = kwh - records[i - 1].kwh;
     }
-
-    // 计算 Speed (消耗速度) - 根据需求：使用上一行和下一行计算
-    // 注意：如果是第一行或最后一行，只能用单边计算
-    // 为了简化，我们暂时用当前行和上一行的斜率，或者按照你的要求实现前后差分
-    let speed = 0;
-    // 预读下一行逻辑比较复杂，这里演示标准的后向差分 (Current - Prev) / TimeDiff
-    // 如果需要严格的 (Next - Prev) 居中差分，需要先生成基本数组再二次遍历
-
     records.push({
       timestamp,
       rawTime: timeStr,
