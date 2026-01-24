@@ -30,7 +30,7 @@
         <!-- Content -->
         <div class="flex-grow-1 overflow-hidden position-relative">
             <!-- List View -->
-            <div v-if="viewMode === 'list'" class="h-100 overflow-auto" ref="listContainer">
+            <div v-if="viewMode === 'list'" class="h-100 overflow-auto user-select-none" ref="listContainer">
                 <table class="table table-hover table-sm mb-0 user-select-none">
                     <thead class="table-success sticky-top">
                         <tr>
@@ -402,5 +402,8 @@ const chartOption = computed(() => {
 
 .user-select-none {
     user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
 }
 </style>
