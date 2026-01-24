@@ -110,3 +110,43 @@ impl Records {
         Ok(Self(rsts))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use chrono::{DateTime, Local};
+
+    use crate::Records;
+
+    #[tokio::test]
+    async fn load_records() {
+        let recs = Records::from_csv(Cursor::new(
+            "\
+2026-01-24T14:35:32+08:00,33.43
+2026-01-25T00:00:00+08:00,10.00
+",
+        ))
+        .await
+        .unwrap();
+
+        assert_eq!(
+            recs.0,
+            vec![
+                (
+                    DateTime::from_timestamp_secs(1769236532)
+                        .unwrap()
+                        .with_timezone(&Local),
+                    33.43f32
+                ),
+                (
+                    // python3.14: int(datetime.datetime(year=2026, month=1, day=25).timestamp())
+                    DateTime::from_timestamp_secs(1769270400)
+                        .unwrap()
+                        .with_timezone(&Local),
+                    10.00f32
+                )
+            ]
+        );
+    }
+}

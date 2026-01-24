@@ -22,7 +22,7 @@ use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::config::{RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig};
 use crate::error::{Error, Result};
@@ -133,10 +133,8 @@ where
     W: AsyncWrite + Unpin,
 {
     out: W,
-    /// 最后一个记录.
-    ///
-    /// 有可能已经被输出, 也有可能没被输出到 out, 总之其只是用于和下一个记录做比较, 不保证非重复性.
-    last_time_degree_pair: Option<(DateTime<Local>, f32)>,
+    /// 最后一个记录的电量, 保证已经被输出到 out 之中.
+    last_degree: Option<f32>,
 }
 
 impl<W> Debug for Recorder<W>
@@ -146,7 +144,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Recorder")
             .field("out", &"...")
-            .field("last_time_degree_pair", &self.last_time_degree_pair)
+            .field("last_degree", &self.last_degree)
             .finish()
     }
 }
@@ -158,41 +156,28 @@ where
     async fn record_instant(&mut self, time: DateTime<Local>, degree: f32) -> Result<()> {
         let line = format!("{},{}\n", time.to_rfc3339(), degree);
         self.out.write_all(line.as_bytes()).await?;
+        self.last_degree = Some(degree);
         Ok(())
     }
 
     async fn record_multiple(&mut self, records: &Records) -> Result<()> {
         for rec in records.iter() {
             self.record_instant(rec.0, rec.1).await?;
-            self.last_time_degree_pair = Some((rec.0, rec.1));
         }
         Ok(())
     }
 
-    /// 尝试记录一次电费, 如果有新纪录产生到输出流, 那么返回这个记录.
-    pub async fn record(&mut self, degree: f32) -> Result<Option<(DateTime<Local>, f32)>> {
-        if let Some((last_time, last_degree)) = self.last_time_degree_pair {
-            if last_degree.sub(degree).abs() < 0.01 {
-                return Ok(None);
-            }
-            self.record_instant(last_time, last_degree).await?;
-            return Ok(Some((last_time, last_degree)));
-        }
+    /// 尝试记录一次电量变化, 只有产生了电量度数的变化才会被记录, 如果被记录了, 那么返回 Ok(true).
+    pub async fn record(&mut self, degree: f32) -> Result<bool> {
         let now_time = Local::now();
-        self.last_time_degree_pair = Some((now_time, degree));
-        Ok(None)
-    }
-
-    /// 将保留在内存中的最后一个记录写入, 并返回这个记录.
-    pub async fn flush(&mut self) -> Result<Option<(DateTime<Local>, f32)>> {
-        if let Some((last_time, last_degree)) = self.last_time_degree_pair {
-            let line = format!("{},{}\n", last_time.to_rfc3339(), last_degree);
-            self.out.write_all(line.as_bytes()).await?;
-            self.last_time_degree_pair = None;
-            Ok(Some((last_time, last_degree)))
-        } else {
-            Ok(None)
+        if let Some(last_degree) = self.last_degree
+            && last_degree.sub(degree).abs() < 0.01
+        {
+            return Ok(false);
         }
+
+        self.record_instant(now_time, degree).await?;
+        Ok(true)
     }
 }
 
@@ -209,19 +194,18 @@ impl Recorder<File> {
         }
         file.seek(SeekFrom::Start(0)).await?;
 
-        let last_time_degree_pair = if let Some(last_line) = last_line {
-            let (time, degree) = last_line
+        let last_degree = if let Some(last_line) = last_line {
+            let (_, degree) = last_line
                 .split_once(',')
                 .ok_or(Error::DegreeRecordsFormatError)?;
-            let time = DateTime::parse_from_rfc3339(time)?.with_timezone(&Local);
             let degree: f32 = degree.trim().parse()?;
-            Some((time, degree))
+            Some(degree)
         } else {
             None
         };
         Ok(Recorder {
             out: file,
-            last_time_degree_pair,
+            last_degree,
         })
     }
 
@@ -232,6 +216,7 @@ impl Recorder<File> {
             .read(true)
             .write(true)
             .append(false)
+            .truncate(false)
             .create(true)
             .open(records_path)
             .await?;
@@ -244,7 +229,6 @@ impl Recorder<File> {
     ///
     /// - 需要 File 输出对象是 Seekable 和 Readable 的, 不然将会返回 [`Error::IoError`].
     pub async fn archive(&mut self, time_range: TimeRange) -> Result<Records> {
-        self.flush().await?;
         self.out.seek(SeekFrom::Start(0)).await?;
         let records = Records::from_csv(&mut self.out).await?;
         let mut archived = Vec::new();
@@ -259,7 +243,6 @@ impl Recorder<File> {
         self.out.seek(SeekFrom::Start(0)).await?;
         for rec in retained {
             self.record_instant(rec.0, rec.1).await?;
-            self.last_time_degree_pair = Some((rec.0, rec.1));
         }
         Ok(Records(archived))
     }
@@ -333,7 +316,7 @@ pub enum GetDegreeResponse {
 }
 
 async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<GetDegreeResponse>) {
-    info!("get degree request");
+    debug!("get degree request");
     let querier = state.querier.read().await;
     if querier.config.is_invalid() {
         return (StatusCode::OK, Json(GetDegreeResponse::RoomConfigMissing));
@@ -401,7 +384,13 @@ async fn create_archive(
 }
 
 async fn record_loop(state: Arc<AppState>) -> ! {
+    enum LoopState {
+        Normal,
+        NotLogined,
+    }
+
     let mut interval = tokio::time::interval(Duration::from_secs(10));
+    let mut loop_state = LoopState::Normal;
     loop {
         interval.tick().await;
         match state.querier.read().await.query_electricity_degree().await {
@@ -410,10 +399,21 @@ async fn record_loop(state: Arc<AppState>) -> ! {
                 if let Err(e) = state.recorder.write().await.record(degree).await {
                     error!("recording: {e:?}");
                 }
+                loop_state = LoopState::Normal;
             }
-            Err(e) => {
-                error!("querying: {e:?}");
-            }
+            Err(e) => match loop_state {
+                LoopState::Normal => {
+                    error!("querying: {e:?}");
+                    if matches!(e, Error::EcnuError(_)) {
+                        loop_state = LoopState::NotLogined;
+                    }
+                }
+                LoopState::NotLogined => {
+                    if !matches!(e, Error::EcnuError(_)) {
+                        error!("querying: {e:?}");
+                    }
+                }
+            },
         }
     }
 }
