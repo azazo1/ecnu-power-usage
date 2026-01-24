@@ -33,7 +33,7 @@
             <div v-if="viewMode === 'list'" class="h-100 overflow-auto user-select-none" ref="listContainer"
                 @contextmenu.prevent>
                 <table class="table table-hover table-sm mb-0 user-select-none">
-                    <thead class="table-success sticky-top">
+                    <thead class="table-primary sticky-top">
                         <tr>
                             <th class="px-4 py-3 fw-bold">
                                 <i class="bi bi-clock me-2"></i>时间
@@ -85,8 +85,8 @@
                                 {{ selectionStats.count }}
                             </span>
                         </div>
-                        <button type="button" class="btn-close small" aria-label="Close" style="font-size: 0.6rem;"
-                            @click="clearSelection" title="取消选择"></button>
+                        <i class="bi bi-x-lg text-secondary cursor-pointer hover-text-danger" style="font-size: 0.7rem;"
+                            @click="clearSelection" title="取消选择"></i>
                     </div>
 
                     <div class="d-flex flex-column gap-1 mb-2">
@@ -96,6 +96,7 @@
                             </span>
                             <span class="font-monospace text-danger fw-bold">
                                 {{ selectionStats.totalConsumed.toFixed(2) }}
+                                <small class="text-muted fw-normal" style="font-size: 0.7em;">kWh</small>
                             </span>
                         </div>
 
@@ -105,6 +106,7 @@
                             </span>
                             <span class="font-monospace text-success fw-bold">
                                 {{ selectionStats.avgSpeed.toFixed(2) }}
+                                <small class="text-muted fw-normal" style="font-size: 0.7em;">kWh/h</small>
                             </span>
                         </div>
 
@@ -113,7 +115,8 @@
                                 <i class="bi bi-hourglass-split me-1"></i>时长
                             </span>
                             <span class="font-monospace fw-bold text-dark">
-                                {{ selectionStats.timeSpan }}h
+                                {{ selectionStats.timeSpan }}
+                                <small class="text-muted fw-normal" style="font-size: 0.7em;">h</small>
                             </span>
                         </div>
                     </div>
@@ -121,17 +124,16 @@
                     <div class="d-flex gap-2 pt-2 border-top border-success border-opacity-10">
                         <button
                             class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
-                            style="height: 24px;" @click="extendToStart" title="选中从开头到当前的数据 (Extend to Start)">
+                            style="height: 24px;" @click="extendToStart" title="选中从开头到当前">
                             <i class="bi bi-skip-backward-fill"></i>
                         </button>
                         <button
                             class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
-                            style="height: 24px;" @click="extendToEnd" title="选中从当前到末尾的数据 (Extend to End)">
+                            style="height: 24px;" @click="extendToEnd" title="选中从当前到末尾">
                             <i class="bi bi-skip-forward-fill"></i>
                         </button>
                     </div>
                 </div>
-
                 <!-- Overlay for clearing selection -->
                 <!-- <div v-if="selectionStats.count > 0" class="position-absolute top-0 start-0 w-100 h-100"
                     style="z-index: 2;" @click="clearSelection"></div> -->
