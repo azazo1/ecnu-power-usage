@@ -72,48 +72,63 @@
 
                 <!-- Statistics Card -->
                 <div v-if="selectionStats.count > 0"
-                    class="position-absolute bottom-0 end-0 m-4 bg-white border-2 border-success rounded-4 shadow-lg p-4 z-3 animate-slide-in"
-                    style="min-width: 280px;">
-                    <h5 class="fw-bold text-success mb-3 d-flex align-items-center gap-2">
-                        <i class="bi bi-graph-up-arrow"></i>
-                        统计信息
-                        <span class="badge bg-success rounded-pill fs-6">{{ selectionStats.count }} 项</span>
-                    </h5>
-                    <div class="row g-3 small">
-                        <div class="col-12">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-secondary">
-                                    <i class="bi bi-lightning-charge me-1"></i>累计消耗:
-                                </span>
-                                <span class="font-monospace text-danger fw-bold fs-6">
-                                    {{ selectionStats.totalConsumed.toFixed(2) }} kWh
-                                </span>
-                            </div>
+                    class="position-absolute bottom-0 end-0 m-3 bg-white border border-success border-opacity-50 rounded-3 shadow p-2 z-3 animate-slide-in"
+                    style="min-width: 200px; font-size: 0.8rem;">
+
+                    <div
+                        class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom border-success border-opacity-25">
+                        <div class="fw-bold text-success d-flex align-items-center gap-1">
+                            <i class="bi bi-graph-up-arrow"></i>
+                            <span>统计</span>
+                            <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2 py-0"
+                                style="font-size: 0.75rem;">
+                                {{ selectionStats.count }}
+                            </span>
                         </div>
-                        <div class="col-12">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-secondary">
-                                    <i class="bi bi-speedometer2 me-1"></i>平均速度:
-                                </span>
-                                <span class="font-monospace text-success fw-bold fs-6">
-                                    {{ selectionStats.avgSpeed.toFixed(2) }} kWh/h
-                                </span>
-                            </div>
+                        <button type="button" class="btn-close small" aria-label="Close" style="font-size: 0.6rem;"
+                            @click="clearSelection" title="取消选择"></button>
+                    </div>
+
+                    <div class="d-flex flex-column gap-1 mb-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-secondary text-nowrap me-3">
+                                <i class="bi bi-lightning-charge me-1"></i>消耗
+                            </span>
+                            <span class="font-monospace text-danger fw-bold">
+                                {{ selectionStats.totalConsumed.toFixed(2) }}
+                            </span>
                         </div>
-                        <div class="col-12">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-secondary">
-                                    <i class="bi bi-hourglass-split me-1"></i>时间跨度:
-                                </span>
-                                <span class="font-monospace fw-bold fs-6">
-                                    {{ selectionStats.timeSpan }} h
-                                </span>
-                            </div>
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-secondary text-nowrap me-3">
+                                <i class="bi bi-speedometer2 me-1"></i>速度
+                            </span>
+                            <span class="font-monospace text-success fw-bold">
+                                {{ selectionStats.avgSpeed.toFixed(2) }}
+                            </span>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-secondary text-nowrap me-3">
+                                <i class="bi bi-hourglass-split me-1"></i>时长
+                            </span>
+                            <span class="font-monospace fw-bold text-dark">
+                                {{ selectionStats.timeSpan }}h
+                            </span>
                         </div>
                     </div>
-                    <div class="mt-3 pt-3 border-top border-success border-opacity-25 text-center text-muted small">
-                        <i class="bi bi-mouse me-1"></i>左键选起点 / 右键选终点
-                        <div class="mt-1 text-decoration-underline cursor-pointer" @click="clearSelection">取消选择</div>
+
+                    <div class="d-flex gap-2 pt-2 border-top border-success border-opacity-10">
+                        <button
+                            class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
+                            style="height: 24px;" @click="extendToStart" title="选中从开头到当前的数据 (Extend to Start)">
+                            <i class="bi bi-skip-backward-fill"></i>
+                        </button>
+                        <button
+                            class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
+                            style="height: 24px;" @click="extendToEnd" title="选中从当前到末尾的数据 (Extend to End)">
+                            <i class="bi bi-skip-forward-fill"></i>
+                        </button>
                     </div>
                 </div>
 
@@ -174,6 +189,15 @@ const formatTime = (d: Date) => format(d, "yyyy-MM-dd HH:mm:ss");
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
 
+const correctifyBoundary = () => {
+    if (selectionEnd.value === null || selectionStart.value === null) return;
+    if (selectionEnd.value < selectionStart.value) {
+        let tmp = selectionStart.value;
+        selectionStart.value = selectionEnd.value;
+        selectionEnd.value = tmp;
+    }
+}
+
 // 左键点击：设置起点
 const setStartPoint = (index: number) => {
     selectionStart.value = index;
@@ -183,6 +207,7 @@ const setStartPoint = (index: number) => {
     if (selectionEnd.value === null) {
         selectionEnd.value = index;
     }
+    correctifyBoundary();
 };
 
 // 右键点击：设置终点
@@ -192,11 +217,29 @@ const setEndPoint = (index: number) => {
     if (selectionStart.value === null) {
         selectionStart.value = index;
     }
+    correctifyBoundary();
 };
 
 const clearSelection = () => {
     selectionStart.value = null;
     selectionEnd.value = null;
+};
+
+const extendToStart = () => {
+    if (!selectedRange.value) return;
+    // 保持当前的结束点不变，将开始点设为 0
+    // 注意：这里利用 selectedRange 计算好的 end，确保逻辑方向正确
+    const currentEnd = selectedRange.value.end;
+    selectionStart.value = 0;
+    selectionEnd.value = currentEnd;
+};
+
+const extendToEnd = () => {
+    if (!selectedRange.value || !props.data.length) return;
+    // 保持当前的开始点不变，将结束点设为最后一条数据的索引
+    const currentStart = selectedRange.value.start;
+    selectionStart.value = currentStart;
+    selectionEnd.value = props.data.length - 1;
 };
 
 // 计算有效范围（自动处理 start > end 的情况）
