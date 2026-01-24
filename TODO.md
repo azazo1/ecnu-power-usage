@@ -4,6 +4,7 @@
 - [ ] 断网客户端断网提醒支持延迟提醒指定时间.
 - [ ] tls 支持
 - [ ] archive 防止重名, 名称使用完整的时间跨度, archive 需要保存元信息, 并且在 list-archive 的时候快速提供.
+  - [ ] archive 元信息包括起止时间, 名称等, 在 /create-archive 中以参数的形式提供其名称, 客户端交互式确定(在 stats card 的 archive 按钮中).
 - <del>gpui</del> tauri
   - [ ] archive 和 archive 下载功能
   - [ ] 统计电量使用场景分布 (各个小时, 各个星期, 各个日期, 各个月, 等)
