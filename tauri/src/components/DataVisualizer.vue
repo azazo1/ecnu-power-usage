@@ -267,7 +267,7 @@ const chartOption = computed(() => {
     }
 
     return {
-        color: ["#10b981", "#14b8a6"],
+        color: ["#10b981", "#f97316"],
         tooltip: {
             trigger: "axis",
             axisPointer: { type: "cross" },
@@ -321,12 +321,12 @@ const chartOption = computed(() => {
                 type: "value",
                 name: "消耗速度 (度/h)",
                 scale: true,
-                nameTextStyle: { color: "#0d9488", fontWeight: "bold" },
+                nameTextStyle: { color: "#ea580c", fontWeight: "bold" },
                 axisLabel: {
-                    color: "#14b8a6",
+                    color: "#f97316",
                     fontWeight: "500",
                 },
-                axisLine: { lineStyle: { color: "#14b8a6", width: 2 } },
+                axisLine: { lineStyle: { color: "#f97316", width: 2 } },
                 splitLine: { show: false },
             },
         ],
@@ -365,7 +365,7 @@ const chartOption = computed(() => {
                 data: speeds,
                 smooth: true,
                 showSymbol: false,
-                lineStyle: { width: 2, type: "solid", shadowBlur: 6, shadowColor: "rgba(20, 184, 166, 0.3)" },
+                lineStyle: { width: 3, type: "solid", shadowBlur: 8, shadowColor: "rgba(249, 115, 22, 0.4)" },
             },
         ],
     };
