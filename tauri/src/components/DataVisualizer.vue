@@ -30,7 +30,8 @@
         <!-- Content -->
         <div class="flex-grow-1 overflow-hidden position-relative">
             <!-- List View -->
-            <div v-if="viewMode === 'list'" class="h-100 overflow-auto user-select-none" ref="listContainer">
+            <div v-if="viewMode === 'list'" class="h-100 overflow-auto user-select-none" ref="listContainer"
+                @contextmenu.prevent>
                 <table class="table table-hover table-sm mb-0 user-select-none">
                     <thead class="table-success sticky-top">
                         <tr>
@@ -45,13 +46,16 @@
                             </th>
                         </tr>
                     </thead>
-                    <tbody @mouseleave="endSelection">
-                        <tr v-for="(row, index) in data" :key="index" class="cursor-crosshair transition-all" :class="{
+                    <tbody>
+                        <tr v-for="(row, index) in data" :key="index" class="cursor-pointer transition-all" :class="{
                             'table-success': isSelected(index),
-                        }" @mousedown="startSelection(index)" @mouseenter="updateSelection(index)"
-                            @mouseup="endSelection">
+                            'bg-success bg-opacity-10': index === selectionStart || index === selectionEnd
+                        }" @click="setStartPoint(index)" @contextmenu.prevent="setEndPoint(index)">
                             <td class="px-4 py-3 font-monospace text-secondary">
                                 {{ formatTime(row.timestamp) }}
+                                <span v-if="index === selectionStart" class="badge bg-success ms-2 scale-in">起点</span>
+                                <span v-if="index === selectionEnd"
+                                    class="badge bg-warning text-dark ms-2 scale-in">终点</span>
                             </td>
                             <td class="px-4 py-3 fw-medium">
                                 {{ row.kwh.toFixed(2) }}
@@ -108,13 +112,14 @@
                         </div>
                     </div>
                     <div class="mt-3 pt-3 border-top border-success border-opacity-25 text-center text-muted small">
-                        <i class="bi bi-info-circle me-1"></i>点击空白处取消选择
+                        <i class="bi bi-mouse me-1"></i>左键选起点 / 右键选终点
+                        <div class="mt-1 text-decoration-underline cursor-pointer" @click="clearSelection">取消选择</div>
                     </div>
                 </div>
 
                 <!-- Overlay for clearing selection -->
-                <div v-if="selectionStats.count > 0" class="position-absolute top-0 start-0 w-100 h-100"
-                    style="z-index: 2;" @click="clearSelection"></div>
+                <!-- <div v-if="selectionStats.count > 0" class="position-absolute top-0 start-0 w-100 h-100"
+                    style="z-index: 2;" @click="clearSelection"></div> -->
             </div>
 
             <!-- Chart View -->
@@ -138,7 +143,7 @@ import {
     LegendComponent,
 } from "echarts/components";
 import VChart from "vue-echarts";
-import { format, differenceInMinutes, startOfDay, addDays } from "date-fns";
+import { format, differenceInMinutes } from "date-fns";
 import type { ElectricityRecord } from "../utils/electricity";
 
 // 注册 ECharts 组件
@@ -162,31 +167,31 @@ const emit = defineEmits(["back"]);
 
 // --- 视图切换逻辑 ---
 const viewMode = ref<"list" | "chart">("list");
-const toggleView = () => {
-    viewMode.value = viewMode.value === "list" ? "chart" : "list";
-};
 
 const formatTime = (d: Date) => format(d, "yyyy-MM-dd HH:mm:ss");
 
-// --- 列表框选逻辑 ---
+// --- 列表选择逻辑 (左键起点，右键终点) ---
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
-const isSelecting = ref(false);
 
-const startSelection = (index: number) => {
-    isSelecting.value = true;
+// 左键点击：设置起点
+const setStartPoint = (index: number) => {
     selectionStart.value = index;
-    selectionEnd.value = index;
-};
-
-const updateSelection = (index: number) => {
-    if (isSelecting.value) {
+    // 逻辑选择：设置新起点时，是重置终点，还是保留终点以调整范围？
+    // 为了防止混乱，这里设定：如果还没有终点，就把终点也设为当前点（即选中单行）
+    // 如果已有终点，则只更新起点，实现范围调整
+    if (selectionEnd.value === null) {
         selectionEnd.value = index;
     }
 };
 
-const endSelection = () => {
-    isSelecting.value = false;
+// 右键点击：设置终点
+const setEndPoint = (index: number) => {
+    selectionEnd.value = index;
+    // 同理，如果还没有起点，把起点也设为这个点
+    if (selectionStart.value === null) {
+        selectionStart.value = index;
+    }
 };
 
 const clearSelection = () => {
@@ -194,9 +199,11 @@ const clearSelection = () => {
     selectionEnd.value = null;
 };
 
+// 计算有效范围（自动处理 start > end 的情况）
 const selectedRange = computed(() => {
     if (selectionStart.value === null || selectionEnd.value === null)
         return null;
+
     const start = Math.min(selectionStart.value, selectionEnd.value);
     const end = Math.max(selectionStart.value, selectionEnd.value);
     return { start, end };
@@ -254,9 +261,7 @@ const chartOption = computed(() => {
             backgroundColor: "rgba(255, 255, 255, 0.95)",
             borderColor: "#10b981",
             borderWidth: 2,
-            textStyle: {
-                color: "#374151",
-            },
+            textStyle: { color: "#374151" },
             formatter: (params: any) => {
                 if (!params || params.length === 0) return "";
                 const date = new Date(params[0].value[0]);
@@ -276,10 +281,7 @@ const chartOption = computed(() => {
         },
         legend: {
             data: ["剩余电量", "消耗速度"],
-            textStyle: {
-                color: "#047857",
-                fontWeight: "bold",
-            },
+            textStyle: { color: "#047857", fontWeight: "bold" },
         },
         grid: { left: "3%", right: "4%", bottom: "15%", containLabel: true },
         dataZoom: [
@@ -293,9 +295,7 @@ const chartOption = computed(() => {
             axisLabel: {
                 color: "#047857",
                 fontWeight: "500",
-                formatter: (value: number) => {
-                    return format(new Date(value), "MM-dd\nHH:mm");
-                },
+                formatter: (value: number) => format(new Date(value), "MM-dd\nHH:mm"),
                 rotate: 0,
                 hideOverlap: true,
             },
@@ -306,26 +306,18 @@ const chartOption = computed(() => {
                 name: "剩余电量 (度)",
                 scale: true,
                 nameTextStyle: { color: "#047857", fontWeight: "bold" },
-                axisLabel: {
-                    color: "#059669",
-                    fontWeight: "500",
-                },
+                axisLabel: { color: "#059669", fontWeight: "500" },
                 axisLine: { lineStyle: { color: "#10b981", width: 2 } },
                 splitLine: { show: true, lineStyle: { type: "dashed", color: "#d1fae5" } },
-                min: (value: any) =>
-                    (value.min - (value.max - value.min) * 0.1).toFixed(1),
-                max: (value: any) =>
-                    (value.max + (value.max - value.min) * 0.1).toFixed(1),
+                min: (value: any) => (value.min - (value.max - value.min) * 0.1).toFixed(1),
+                max: (value: any) => (value.max + (value.max - value.min) * 0.1).toFixed(1),
             },
             {
                 type: "value",
                 name: "消耗速度 (度/h)",
                 scale: true,
                 nameTextStyle: { color: "#ea580c", fontWeight: "bold" },
-                axisLabel: {
-                    color: "#f97316",
-                    fontWeight: "500",
-                },
+                axisLabel: { color: "#f97316", fontWeight: "500" },
                 axisLine: { lineStyle: { color: "#f97316", width: 2 } },
                 splitLine: { show: false },
             },
@@ -341,10 +333,7 @@ const chartOption = computed(() => {
                 areaStyle: {
                     color: {
                         type: "linear",
-                        x: 0,
-                        y: 0,
-                        x2: 0,
-                        y2: 1,
+                        x: 0, y: 0, x2: 0, y2: 1,
                         colorStops: [
                             { offset: 0, color: "rgba(16, 185, 129, 0.4)" },
                             { offset: 0.5, color: "rgba(16, 185, 129, 0.2)" },
@@ -376,8 +365,8 @@ const chartOption = computed(() => {
     transform: scale(1.05);
 }
 
-.cursor-crosshair {
-    cursor: crosshair;
+.cursor-pointer {
+    cursor: pointer;
 }
 
 .transition-all {
@@ -386,6 +375,10 @@ const chartOption = computed(() => {
 
 .animate-slide-in {
     animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.scale-in {
+    animation: scaleIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes slideIn {
@@ -397,6 +390,16 @@ const chartOption = computed(() => {
     to {
         opacity: 1;
         transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0);
+    }
+
+    to {
+        transform: scale(1);
     }
 }
 
