@@ -1,0 +1,7 @@
+default: install dev
+
+dev:
+    bun run tauri dev
+
+install:
+    bun install
