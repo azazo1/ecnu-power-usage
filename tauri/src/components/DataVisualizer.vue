@@ -107,7 +107,7 @@
                         </span>
                         <span class="font-monospace text-success fw-bold">
                             {{ selectionStats.avgSpeed.toFixed(2) }}
-                            <small class="text-muted fw-normal" style="font-size: 0.7em;">kWh/h</small>
+                            <small class="text-muted fw-normal" style="font-size: 0.7em;">kWh/天</small>
                         </span>
                     </div>
 
@@ -277,7 +277,7 @@ const selectionStats = computed(() => {
     const timeSpan = (minutes / 60).toFixed(1);
 
     const avgSpeed =
-        Number(timeSpan) > 0 ? totalConsumed / Number(timeSpan) : 0;
+        Number(timeSpan) > 0 ? (totalConsumed / Number(timeSpan)) * 24 : 0;
 
     return {
         count: subset.length,
@@ -293,7 +293,7 @@ const chartOption = computed(() => {
 
     // 使用时间戳作为x轴，数据格式为 [timestamp, value]
     const kwhsData = props.data.map((d) => [d.timestamp.getTime(), d.kwh]);
-    const speedsData = props.data.map((d) => [d.timestamp.getTime(), parseFloat(d.speed.toFixed(3))]);
+    const speedsData = props.data.map((d) => [d.timestamp.getTime(), parseFloat((d.speed * 24).toFixed(3))]);
 
     return {
         color: ["#10b981", "#f97316"],
@@ -311,7 +311,7 @@ const chartOption = computed(() => {
                 let result = `<div style="font-weight: bold; margin-bottom: 8px;">${timeStr}</div>`;
                 params.forEach((param: any) => {
                     const value = typeof param.value[1] === "number" ? param.value[1].toFixed(2) : param.value[1];
-                    const unit = param.seriesName === "剩余电量" ? "kWh" : "kWh/h";
+                    const unit = param.seriesName === "剩余电量" ? "kWh" : "kWh/天";
                     result += `<div style="margin: 4px 0;">
                         <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${param.color};margin-right:8px;"></span>
                         <span style="font-weight: 500;">${param.seriesName}:</span>
@@ -337,7 +337,7 @@ const chartOption = computed(() => {
             axisLabel: {
                 color: "#047857",
                 fontWeight: "500",
-                formatter: (value: number) => format(new Date(value), "MM-dd\nHH:mm"),
+                formatter: (value: number) => format(new Date(value), "MM-dd HH:mm"),
                 rotate: 0,
                 hideOverlap: true,
             },
@@ -356,7 +356,7 @@ const chartOption = computed(() => {
             },
             {
                 type: "value",
-                name: "消耗速度 (度/h)",
+                name: "消耗速度 (度/天)",
                 scale: true,
                 nameTextStyle: { color: "#ea580c", fontWeight: "bold" },
                 axisLabel: { color: "#f97316", fontWeight: "500" },
