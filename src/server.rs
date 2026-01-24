@@ -8,8 +8,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use axum::{body::Body, extract::State, http::{Response, StatusCode, header::COOKIE}};
-use axum::{Form, Json, Router, response::IntoResponse, routing::{get, post}};
+use axum::{
+    Form, Json, Router,
+    response::IntoResponse,
+    routing::{get, post},
+};
+use axum::{
+    body::Body,
+    extract::State,
+    http::{Response, StatusCode, header::COOKIE},
+};
 use chrono::{DateTime, FixedOffset, Local, TimeZone};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Method};
@@ -346,7 +354,7 @@ async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Get
 pub struct TimeSpan {
     /// 时间范围: 开头 (包含)
     pub start_time: Option<DateTime<FixedOffset>>,
-    /// 时间范围: 末尾 (不包含)
+    /// 时间范围: 末尾 (包含)
     pub end_time: Option<DateTime<FixedOffset>>,
 }
 
@@ -376,7 +384,7 @@ impl TimeSpan {
 
     #[must_use]
     pub fn contains<Tz: TimeZone>(&self, o: &DateTime<Tz>) -> bool {
-        self.start_time.is_none_or(|st| st.le(o)) && self.end_time.is_none_or(|et| et.gt(o))
+        self.start_time.is_none_or(|st| st.le(o)) && self.end_time.is_none_or(|et| et.ge(o))
     }
 }
 
