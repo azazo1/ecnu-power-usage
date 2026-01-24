@@ -1,27 +1,30 @@
 //! 服务端逻辑.
 use std::fmt::{Debug, Display};
+use std::io::SeekFrom;
 use std::net::SocketAddr;
-use std::ops::Sub;
+use std::ops::{Range, Sub};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use axum::extract::State;
+use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{DateTime, Local};
+use chromiumoxide::cdp::browser_protocol::tracing::RecordClockSyncMarkerParams;
+use chrono::{DateTime, Local, TimeZone};
 use reqwest::header::COOKIE;
 use reqwest::{Client, Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::fs::{self, File, OpenOptions};
-use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
-use crate::config::{RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig, load_room_config};
+use crate::config::{RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig};
 use crate::error::{Error, Result};
 use crate::{Cookies, Records};
 
@@ -130,6 +133,9 @@ where
     W: AsyncWrite + Unpin,
 {
     out: W,
+    /// 最后一个记录.
+    ///
+    /// 有可能已经被输出, 也有可能没被输出到 out, 总之其只是用于和下一个记录做比较, 不保证非重复性.
     last_time_degree_pair: Option<(DateTime<Local>, f32)>,
 }
 
@@ -149,14 +155,27 @@ impl<W> Recorder<W>
 where
     W: AsyncWrite + Unpin,
 {
+    async fn record_instant(&mut self, time: DateTime<Local>, degree: f32) -> Result<()> {
+        let line = format!("{},{}\n", time.to_rfc3339(), degree);
+        self.out.write_all(line.as_bytes()).await?;
+        Ok(())
+    }
+
+    async fn record_multiple(&mut self, records: &Records) -> Result<()> {
+        for rec in records.iter() {
+            self.record_instant(rec.0, rec.1).await?;
+            self.last_time_degree_pair = Some((rec.0, rec.1));
+        }
+        Ok(())
+    }
+
     /// 尝试记录一次电费, 如果有新纪录产生到输出流, 那么返回这个记录.
     pub async fn record(&mut self, degree: f32) -> Result<Option<(DateTime<Local>, f32)>> {
         if let Some((last_time, last_degree)) = self.last_time_degree_pair {
             if last_degree.sub(degree).abs() < 0.01 {
                 return Ok(None);
             }
-            let line = format!("{},{}\n", last_time.to_rfc3339(), last_degree);
-            self.out.write_all(line.as_bytes()).await?;
+            self.record_instant(last_time, last_degree).await?;
             return Ok(Some((last_time, last_degree)));
         }
         let now_time = Local::now();
@@ -164,28 +183,32 @@ where
         Ok(None)
     }
 
-    #[must_use]
-    pub fn new(out: W) -> Self {
-        Recorder {
-            out,
-            last_time_degree_pair: None,
+    /// 将保留在内存中的最后一个记录写入, 并返回这个记录.
+    pub async fn flush(&mut self) -> Result<Option<(DateTime<Local>, f32)>> {
+        if let Some((last_time, last_degree)) = self.last_time_degree_pair {
+            let line = format!("{},{}\n", last_time.to_rfc3339(), last_degree);
+            self.out.write_all(line.as_bytes()).await?;
+            self.last_time_degree_pair = None;
+            Ok(Some((last_time, last_degree)))
+        } else {
+            Ok(None)
         }
     }
 }
 
 impl Recorder<File> {
-    pub async fn load_from_records(records_path: impl AsRef<Path>) -> Result<Recorder<File>> {
-        let records_path = records_path.as_ref();
+    /// 从可读可写文件中加载.
+    pub async fn load_from_rw_file(mut file: File) -> Result<Recorder<File>> {
         let mut last_line = None;
-        if let Ok(read) = OpenOptions::new().read(true).open(records_path).await {
-            let read = BufReader::new(read);
-            let mut lines = read.lines();
-            while let Some(line) = lines.next_line().await? {
-                if !line.is_empty() {
-                    last_line = Some(line);
-                }
+
+        let mut lines = BufReader::new(&mut file).lines();
+        while let Some(line) = lines.next_line().await? {
+            if !line.is_empty() {
+                last_line = Some(line);
             }
         }
+        file.seek(SeekFrom::Start(0)).await?;
+
         let last_time_degree_pair = if let Some(last_line) = last_line {
             let (time, degree) = last_line
                 .split_once(',')
@@ -196,15 +219,49 @@ impl Recorder<File> {
         } else {
             None
         };
-        let write = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(records_path)
-            .await?;
         Ok(Recorder {
-            out: write,
+            out: file,
             last_time_degree_pair,
         })
+    }
+
+    /// 从路径中加载, 如果文件不存在, 文件将被创建, 并返回对应没有任何记录 Recorder.
+    pub async fn load_from_path(records_path: impl AsRef<Path>) -> Result<Recorder<File>> {
+        let records_path = records_path.as_ref();
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .append(false)
+            .create(true)
+            .open(records_path)
+            .await?;
+        Self::load_from_rw_file(file).await
+    }
+
+    /// 将符合时间范围的记录摘取出来, 从 records.csv 中去除.
+    ///
+    /// # Errors
+    ///
+    /// - 需要 File 输出对象是 Seekable 和 Readable 的, 不然将会返回 [`Error::IoError`].
+    pub async fn archive(&mut self, time_range: TimeRange) -> Result<Records> {
+        self.flush().await?;
+        self.out.seek(SeekFrom::Start(0)).await?;
+        let records = Records::from_csv(&mut self.out).await?;
+        let mut archived = Vec::new();
+        let mut retained = Vec::new();
+        for rec in records.0 {
+            if time_range.contains(&rec.0) {
+                archived.push(rec);
+            } else {
+                retained.push(rec);
+            }
+        }
+        self.out.seek(SeekFrom::Start(0)).await?;
+        for rec in retained {
+            self.record_instant(rec.0, rec.1).await?;
+            self.last_time_degree_pair = Some((rec.0, rec.1));
+        }
+        Ok(Records(archived))
     }
 }
 
@@ -216,13 +273,27 @@ struct AppState {
     config_dir: PathBuf,
 }
 
-/// post room info
+#[derive(Deserialize, Serialize)]
+pub enum PostRoomResponse {
+    Success,
+    FailedToSave,
+}
+
 async fn post_room(
     State(state): State<Arc<AppState>>,
     Json(room_config): Json<RoomConfig>,
-) -> StatusCode {
+) -> (StatusCode, Json<PostRoomResponse>) {
     info!("post room request");
-    todo!("还要写入 room.csv")
+    state.querier.write().await.config = room_config.clone();
+    if let Err(e) = room_config
+        .save_to_file(state.config_dir.join(ROOM_CONFIG_FILENAME))
+        .await
+    {
+        error!("saving room config: {e:?}");
+        (StatusCode::OK, Json(PostRoomResponse::FailedToSave))
+    } else {
+        (StatusCode::OK, Json(PostRoomResponse::Success))
+    }
 }
 
 async fn post_cookies(
@@ -235,46 +306,20 @@ async fn post_cookies(
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct GetRecordsResponse {
-    pub records: Option<Records>,
-    pub msg: String,
+#[serde(tag = "state", content = "content")]
+pub enum GetRecordsResponse {
+    Ok(Records),
+    Error(String),
 }
 
 async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<GetRecordsResponse>) {
     let records_path = state.data_dir.join(RECORDS_FILENAME);
-    match csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_path(records_path)
-    {
+    match Records::from_csv_file(records_path).await {
+        Ok(records) => (StatusCode::OK, Json(GetRecordsResponse::Ok(records))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(GetRecordsResponse {
-                records: None,
-                msg: format!("records file read error: {e:?}"),
-            }),
+            Json(GetRecordsResponse::Error(e.to_string())),
         ),
-        Ok(mut rdr) => {
-            let des: csv::Result<_> = rdr.deserialize::<(DateTime<Local>, f32)>().collect();
-            match des {
-                Ok(des) => {
-                    let records = Records(des);
-                    (
-                        StatusCode::OK,
-                        Json(GetRecordsResponse {
-                            records: Some(records),
-                            msg: "ok".to_string(),
-                        }),
-                    )
-                }
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(GetRecordsResponse {
-                        records: None,
-                        msg: format!("invalid records file format: {e:}"),
-                    }),
-                ),
-            }
-        }
     }
 }
 
@@ -298,10 +343,60 @@ async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Get
         Err(e) => match e {
             Error::EcnuError(_) => (StatusCode::OK, Json(GetDegreeResponse::NotLogined)),
             e => (
-                StatusCode::OK,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 Json(GetDegreeResponse::Error(e.to_string())),
             ),
         },
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TimeRange {
+    /// 时间范围: 开头 (包含)
+    pub start_time: Option<DateTime<Local>>,
+    /// 时间范围: 末尾 (不包含)
+    pub end_time: Option<DateTime<Local>>,
+}
+
+impl TimeRange {
+    pub fn contains<Tz: TimeZone>(&self, o: &DateTime<Tz>) -> bool {
+        self.start_time.is_none_or(|st| st.le(o)) && self.end_time.is_none_or(|et| et.gt(o))
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(tag = "tag", content = "content")]
+pub enum CreateArchiveResponse {
+    /// 保存的 archive 名.
+    Saved(String),
+    /// 当前记录为空.
+    Empty,
+    Error(String),
+}
+
+/// 创建 archive, 将符合时间范围的 records 保存到 archives 之中.
+async fn create_archive(
+    State(state): State<Arc<AppState>>,
+    Json(time_range): Json<TimeRange>,
+) -> Json<CreateArchiveResponse> {
+    let mut recorder = state.recorder.write().await;
+    match recorder.archive(time_range).await {
+        Ok(mut archived) => {
+            archived.sort();
+            if let Some((start_time, _)) = archived.time_span() {
+                let archive_name = start_time.format("%Y-%m-%d-%H-%M.csv").to_string();
+                match Recorder::load_from_path(state.data_dir.join(&archive_name)).await {
+                    Ok(mut recorder) => match recorder.record_multiple(&archived).await {
+                        Err(e) => Json(CreateArchiveResponse::Error(e.to_string())),
+                        _ => Json(CreateArchiveResponse::Saved(archive_name)),
+                    },
+                    Err(e) => Json(CreateArchiveResponse::Error(e.to_string())),
+                }
+            } else {
+                Json(CreateArchiveResponse::Empty)
+            }
+        }
+        Err(e) => Json(CreateArchiveResponse::Error(e.to_string())),
     }
 }
 
@@ -349,7 +444,7 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
     let data_dir_cloned = data_dir.clone();
     let config_dir_cloned = config_dir.clone();
 
-    let room_config = load_room_config(config_dir.join(ROOM_CONFIG_FILENAME))
+    let room_config = RoomConfig::from_file(config_dir.join(ROOM_CONFIG_FILENAME))
         .await
         .with_context(move || {
             config_dir_cloned
@@ -365,7 +460,7 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
             Querier::default()
         }),
         recorder: RwLock::new(
-            Recorder::load_from_records(data_dir.join(RECORDS_FILENAME))
+            Recorder::load_from_path(data_dir.join(RECORDS_FILENAME))
                 .await
                 .with_context(move || {
                     data_dir_cloned

@@ -7,8 +7,6 @@ pub enum Error {
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
     #[error(transparent)]
-    UrlParseError(#[from] url::ParseError),
-    #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
     #[error("ecnu error: {0}")]
     EcnuError(String),
@@ -16,6 +14,8 @@ pub enum Error {
     NoDegree,
     #[error(transparent)]
     TomlDeError(#[from] toml::de::Error),
+    #[error(transparent)]
+    TomlSerError(#[from] toml::ser::Error),
     #[error("config {0} read error: {1}")]
     ConfigFileReadError(PathBuf, String),
     #[error(transparent)]
@@ -32,6 +32,10 @@ pub enum Error {
     BrowserPageError(String),
     #[error("browser cookie error: {0}")]
     CookieError(String),
+    #[error(transparent)]
+    UrlParseError(#[from] url::ParseError),
+    #[error(transparent)]
+    CsvError(#[from] csv_async::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
