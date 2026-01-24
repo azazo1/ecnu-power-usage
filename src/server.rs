@@ -437,8 +437,8 @@ async fn create_archive(
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct DownloadArchiveArgs {
-    name: String,
+pub struct DownloadArchiveArgs {
+    pub name: String,
 }
 
 async fn download_archive(
@@ -479,6 +479,42 @@ async fn download_archive(
             // 失败：返回 404 和普通文本
             (StatusCode::NOT_FOUND, "File not found").into_response()
         }
+    }
+}
+
+async fn list_archives(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, std::result::Result<Json<Vec<String>>, String>) {
+    let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+    // fs::create_dir_all(&archive_dir).await.ok();
+    match fs::read_dir(archive_dir).await {
+        Ok(mut rd) => {
+            let mut archives = Vec::new();
+            loop {
+                match rd.next_entry().await {
+                    Ok(Some(entry)) => {
+                        let Some(filename) = entry.file_name().to_str().map(|s| s.to_string())
+                        else {
+                            continue;
+                        };
+                        if filename.ends_with(".csv") {
+                            archives.push(filename);
+                        }
+                    }
+                    Ok(None) => break (StatusCode::OK, Ok(Json(archives))),
+                    Err(e) => {
+                        break (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Err(format!("Listing archives failed: {e:?}")),
+                        );
+                    }
+                }
+            }
+        }
+        Err(_) => (
+            StatusCode::NOT_FOUND,
+            Err("Archive dir is not exist".to_string()),
+        ),
     }
 }
 
@@ -578,6 +614,7 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
         .route("/get-degree", get(get_degree))
         .route("/create-archive", get(create_archive))
         .route("/download-archive", get(download_archive))
+        .route("/list-archives", get(list_archives))
         .with_state(Arc::clone(&app_state));
     let listener = TcpListener::bind(bind_address).await?;
     let handle = tokio::spawn(async move { record_loop(app_state).await });
