@@ -1,5 +1,5 @@
 <template>
-    <div class="d-flex min-vh-100 bg-gradient"
+    <div class="d-flex vh-100 bg-gradient"
         style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 50%, #a5d6a7 100%);">
         <!-- Sidebar -->
         <aside class="bg-white shadow-lg d-flex flex-column" style="width: 80px; min-width: 80px;">
@@ -26,7 +26,7 @@
                 </button>
             </nav>
 
-            <!-- Version Info -->
+            <!-- Version Info (todo: get version from backend)-->
             <div class="p-3 text-center text-muted small" data-bs-toggle="tooltip" data-bs-placement="right"
                 title="版本 1.0.0 Stable">
                 <span style="opacity: 0.6;">v1.0</span>
@@ -34,7 +34,7 @@
         </aside>
 
         <!-- Main Content -->
-        <main class="flex-grow-1 p-4 overflow-hidden">
+        <main class="flex-grow-1 p-4 h-100 overflow-hidden">
             <transition name="fade" mode="out-in">
                 <!-- Current Records View -->
                 <DataVisualizer v-if="currentTab === 'records'" title="📊 当前周期记录" :data="currentRecords" />

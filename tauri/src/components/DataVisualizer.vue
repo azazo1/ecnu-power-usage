@@ -30,10 +30,10 @@
         <!-- Content -->
         <div class="flex-grow-1 overflow-hidden position-relative">
             <!-- List View -->
-            <div v-if="viewMode === 'list'" class="h-100 overflow-auto user-select-none" ref="listContainer"
-                @contextmenu.prevent>
+            <div v-if="viewMode === 'list'" class="h-100 overflow-auto user-select-none position-relative"
+                ref="listContainer" @contextmenu.prevent>
                 <table class="table table-hover table-sm mb-0 user-select-none">
-                    <thead class="table-primary sticky-top">
+                    <thead class="table-primary sticky-top" style="top: 0; z-index: 10;">
                         <tr>
                             <th class="px-4 py-3 fw-bold">
                                 <i class="bi bi-clock me-2"></i>时间
@@ -69,78 +69,75 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
 
-                <!-- Statistics Card -->
-                <div v-if="selectionStats.count > 0"
-                    class="position-absolute bottom-0 end-0 m-3 bg-white border border-success border-opacity-50 rounded-3 shadow p-2 z-3 animate-slide-in"
-                    style="min-width: 200px; font-size: 0.8rem;">
+            <!-- Statistics Card -->
+            <div v-if="viewMode === 'list' && selectionStats.count > 0"
+                class="position-absolute bottom-0 end-0 m-3 bg-white border border-success border-opacity-50 rounded-3 shadow p-2 z-3 animate-slide-in"
+                style="min-width: 200px; font-size: 0.8rem;">
 
-                    <div
-                        class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom border-success border-opacity-25">
-                        <div class="fw-bold text-success d-flex align-items-center gap-1">
-                            <i class="bi bi-graph-up-arrow"></i>
-                            <span>统计</span>
-                            <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2 py-0"
-                                style="font-size: 0.75rem;">
-                                {{ selectionStats.count }}
-                            </span>
-                        </div>
-                        <i class="bi bi-x-lg text-secondary cursor-pointer hover-text-danger" style="font-size: 0.7rem;"
-                            @click="clearSelection" title="取消选择"></i>
+                <div
+                    class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom border-success border-opacity-25">
+                    <div class="fw-bold text-success d-flex align-items-center gap-1">
+                        <i class="bi bi-graph-up-arrow"></i>
+                        <span>统计</span>
+                        <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2 py-0"
+                            style="font-size: 0.75rem;">
+                            {{ selectionStats.count }}
+                        </span>
+                    </div>
+                    <i class="bi bi-x-lg text-secondary cursor-pointer hover-text-danger" style="font-size: 0.7rem;"
+                        @click="clearSelection" title="取消选择"></i>
+                </div>
+
+                <div class="d-flex flex-column gap-1 mb-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-secondary text-nowrap me-3">
+                            <i class="bi bi-lightning-charge me-1"></i>消耗
+                        </span>
+                        <span class="font-monospace text-danger fw-bold">
+                            {{ selectionStats.totalConsumed.toFixed(2) }}
+                            <small class="text-muted fw-normal" style="font-size: 0.7em;">kWh</small>
+                        </span>
                     </div>
 
-                    <div class="d-flex flex-column gap-1 mb-2">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="text-secondary text-nowrap me-3">
-                                <i class="bi bi-lightning-charge me-1"></i>消耗
-                            </span>
-                            <span class="font-monospace text-danger fw-bold">
-                                {{ selectionStats.totalConsumed.toFixed(2) }}
-                                <small class="text-muted fw-normal" style="font-size: 0.7em;">kWh</small>
-                            </span>
-                        </div>
-
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="text-secondary text-nowrap me-3">
-                                <i class="bi bi-speedometer2 me-1"></i>速度
-                            </span>
-                            <span class="font-monospace text-success fw-bold">
-                                {{ selectionStats.avgSpeed.toFixed(2) }}
-                                <small class="text-muted fw-normal" style="font-size: 0.7em;">kWh/h</small>
-                            </span>
-                        </div>
-
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="text-secondary text-nowrap me-3">
-                                <i class="bi bi-hourglass-split me-1"></i>时长
-                            </span>
-                            <span class="font-monospace fw-bold text-dark">
-                                {{ selectionStats.timeSpan }}
-                                <small class="text-muted fw-normal" style="font-size: 0.7em;">h</small>
-                            </span>
-                        </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-secondary text-nowrap me-3">
+                            <i class="bi bi-speedometer2 me-1"></i>速度
+                        </span>
+                        <span class="font-monospace text-success fw-bold">
+                            {{ selectionStats.avgSpeed.toFixed(2) }}
+                            <small class="text-muted fw-normal" style="font-size: 0.7em;">kWh/h</small>
+                        </span>
                     </div>
 
-                    <div class="d-flex gap-2 pt-2 border-top border-success border-opacity-10">
-                        <button
-                            class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
-                            style="height: 24px;" @click="extendToStart" title="选中从开头到当前">
-                            <i class="bi bi-skip-backward-fill"></i>
-                        </button>
-                        <button
-                            class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
-                            style="height: 24px;" @click="extendToEnd" title="选中从当前到末尾">
-                            <i class="bi bi-skip-forward-fill"></i>
-                        </button>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-secondary text-nowrap me-3">
+                            <i class="bi bi-hourglass-split me-1"></i>时长
+                        </span>
+                        <span class="font-monospace fw-bold text-dark">
+                            {{ selectionStats.timeSpan }}
+                            <small class="text-muted fw-normal" style="font-size: 0.7em;">h</small>
+                        </span>
                     </div>
                 </div>
-                <!-- Overlay for clearing selection -->
-                <!-- <div v-if="selectionStats.count > 0" class="position-absolute top-0 start-0 w-100 h-100"
-                    style="z-index: 2;" @click="clearSelection"></div> -->
+
+                <div class="d-flex gap-2 pt-2 border-top border-success border-opacity-10">
+                    <button
+                        class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
+                        style="height: 24px;" @click="extendToStart" title="选中从开头到当前">
+                        <i class="bi bi-skip-backward-fill"></i>
+                    </button>
+                    <button
+                        class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
+                        style="height: 24px;" @click="extendToEnd" title="选中从当前到末尾">
+                        <i class="bi bi-skip-forward-fill"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- Chart View -->
-            <div v-else class="h-100 w-100 p-4">
+            <div v-if="viewMode === 'chart'" class="h-100 w-100 p-4">
                 <v-chart class="h-100 w-100" :option="chartOption" autoresize />
             </div>
         </div>
@@ -453,5 +450,20 @@ const chartOption = computed(() => {
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+}
+
+.sticky-top {
+    background-color: var(--bs-primary-bg-subtle) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* 优化滚动条样式，使其更美观 */
+.overflow-auto::-webkit-scrollbar {
+    width: 6px;
+}
+
+.overflow-auto::-webkit-scrollbar-thumb {
+    background: rgba(16, 185, 129, 0.2);
+    border-radius: 10px;
 }
 </style>
