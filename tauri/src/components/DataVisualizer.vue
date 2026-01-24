@@ -137,8 +137,29 @@
             </div>
 
             <!-- Chart View -->
-            <div v-if="viewMode === 'chart'" class="h-100 w-100 p-4">
-                <v-chart class="h-100 w-100" :option="chartOption" autoresize />
+            <div v-if="viewMode === 'chart'" class="h-100 w-100 p-3 d-flex flex-column">
+                <div class="d-flex align-items-center gap-2 mb-2 px-1 animate-slide-in" style="font-size: 0.75rem;">
+                    <div class="d-flex align-items-center gap-2 text-secondary border-end pe-2">
+                        <span class="fw-bold text-success"><i class="bi bi-globe2 me-1"></i>总:</span>
+                        <span>{{ totalStats?.consumed }}<small>kWh</small></span>
+                        <span class="opacity-50">|</span>
+                        <span>{{ totalStats?.speed }}<small>kWh/天</small></span>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2 flex-grow-1">
+                        <span class="fw-bold text-primary"><i class="bi bi-zoom-in me-1"></i>视图:</span>
+                        <span class="text-danger fw-bold">{{ windowStats?.consumed }}<small
+                                class="fw-normal text-muted">kWh</small></span>
+                        <span class="text-success fw-bold">{{ windowStats?.speed }}<small
+                                class="fw-normal text-muted">kWh/天</small></span>
+                        <span class="text-dark fw-bold">{{ windowStats?.hours }}<small
+                                class="fw-normal text-muted">h</small></span>
+                    </div>
+                </div>
+
+                <div class="flex-grow-1 position-relative">
+                    <v-chart class="h-100 w-100" :option="chartOption" autoresize @datazoom="handleDataZoom" />
+                </div>
             </div>
         </div>
     </div>
@@ -394,6 +415,78 @@ const chartOption = computed(() => {
                 lineStyle: { width: 3, type: "solid", shadowBlur: 8, shadowColor: "rgba(249, 115, 22, 0.4)" },
             },
         ],
+    };
+});
+
+// --- 实时图表窗口统计逻辑 ---
+const chartWindowRange = ref({ startValue: 0, endValue: 0 });
+
+// 处理 ECharts 的 dataZoom 事件
+const handleDataZoom = (params: any) => {
+    let startPercent, endPercent;
+
+    // 兼容不同的触发方式（缩放或平移）
+    if (params.batch) {
+        startPercent = params.batch[0].start;
+        endPercent = params.batch[0].end;
+    } else {
+        startPercent = params.start;
+        endPercent = params.end;
+    }
+
+    // 只有百分比有效时才更新
+    if (startPercent !== undefined && endPercent !== undefined) {
+        const totalStart = props.data[0].timestamp.getTime();
+        const totalEnd = props.data[props.data.length - 1].timestamp.getTime();
+        const totalDuration = totalEnd - totalStart;
+
+        // 将百分比映射回真实的时间戳
+        chartWindowRange.value = {
+            startValue: totalStart + (totalDuration * startPercent) / 100,
+            endValue: totalStart + (totalDuration * endPercent) / 100
+        };
+    }
+};
+
+// 计算当前窗口的统计信息
+const windowStats = computed(() => {
+    if (!props.data.length) return null;
+
+    // 如果还没触发过缩放，默认显示全部
+    const start = chartWindowRange.value.startValue || props.data[0].timestamp.getTime();
+    const end = chartWindowRange.value.endValue || props.data[props.data.length - 1].timestamp.getTime();
+
+    const subset = props.data.filter(d => {
+        const t = d.timestamp.getTime();
+        return t >= start && t <= end;
+    });
+
+    if (subset.length < 2) return null;
+
+    const first = subset[0];
+    const last = subset[subset.length - 1];
+    const consumed = Math.abs(first.kwh - last.kwh);
+    const hours = Math.abs(differenceInMinutes(last.timestamp, first.timestamp)) / 60;
+
+    return {
+        consumed: consumed.toFixed(2),
+        speed: hours > 0 ? ((consumed / hours) * 24).toFixed(2) : "0.00",
+        hours: hours.toFixed(1)
+    };
+});
+
+// 计算全部数据的统计信息
+const totalStats = computed(() => {
+    if (props.data.length < 2) return null;
+    const first = props.data[0];
+    const last = props.data[props.data.length - 1];
+    const consumed = Math.abs(first.kwh - last.kwh);
+    const hours = Math.abs(differenceInMinutes(last.timestamp, first.timestamp)) / 60;
+
+    return {
+        consumed: consumed.toFixed(2),
+        speed: hours > 0 ? ((consumed / hours) * 24).toFixed(2) : "0.00",
+        hours: hours.toFixed(1)
     };
 });
 </script>
