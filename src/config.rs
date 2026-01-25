@@ -21,7 +21,7 @@ impl RoomConfig {
         let room_config: RoomConfig = toml::from_str(
             &fs::read_to_string(&config_path)
                 .await
-                .map_err(|e| Error::ConfigFileReadError(config_path.into(), e.to_string()))?,
+                .map_err(|e| Error::FileRead(config_path.into(), e.to_string()))?,
         )?;
         Ok(room_config)
     }

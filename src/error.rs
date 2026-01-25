@@ -1,41 +1,60 @@
 use std::{io, path::PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error(transparent)]
-    IoError(#[from] io::Error),
+    Io(#[from] io::Error),
     #[error(transparent)]
-    SerdeJsonError(#[from] serde_json::Error),
+    SerdeJson(#[from] serde_json::Error),
     #[error(transparent)]
-    ReqwestError(#[from] reqwest::Error),
+    Reqwest(#[from] reqwest::Error),
     #[error("ecnu error: {0}")]
-    EcnuError(String),
+    Ecnu(String),
     #[error("response has no degree provided.")]
     NoDegree,
     #[error(transparent)]
-    TomlDeError(#[from] toml::de::Error),
+    TomlDe(#[from] toml::de::Error),
     #[error(transparent)]
-    TomlSerError(#[from] toml::ser::Error),
-    #[error("config {0} read error: {1}")]
-    ConfigFileReadError(PathBuf, String),
+    TomlSer(#[from] toml::ser::Error),
+    #[error("file {0} read error: {1}")]
+    FileRead(PathBuf, String),
     #[error(transparent)]
-    ChronoParseError(#[from] chrono::ParseError),
+    ChronoParse(#[from] chrono::ParseError),
     #[error(transparent)]
-    ParseFloatError(#[from] std::num::ParseFloatError),
+    FloatParse(#[from] std::num::ParseFloatError),
     #[error("invalid degree records format")]
-    DegreeRecordsFormatError,
+    InvalidRecordsFormat,
     #[error(transparent)]
-    ChromiumError(#[from] chromiumoxide::error::CdpError),
-    #[error("{0}")]
-    ChromiumParamBuildingError(String),
+    Chromium(#[from] chromiumoxide::error::CdpError),
     #[error("browser page error: {0}")]
-    BrowserPageError(String),
+    BrowserPage(String),
     #[error("browser cookie error: {0}")]
-    CookieError(String),
+    Cookie(String),
     #[error(transparent)]
-    UrlParseError(#[from] url::ParseError),
+    UrlParse(#[from] url::ParseError),
     #[error(transparent)]
-    CsvError(#[from] csv_async::Error),
+    Csv(#[from] csv_async::Error),
+    #[error("cs response: {0}")]
+    CS(#[from] CSError),
+}
+
+/// Client-Server error
+#[derive(thiserror::Error, Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "tag", content = "content")]
+pub enum CSError {
+    #[error("{0}")]
+    General(String),
+    #[error("ecnu is not logged in on server side")]
+    EcnuNotLogin,
+    #[error("server lacks room config")]
+    RoomConfigMissing,
+    #[error("archive is empty")]
+    EmptyArchive,
+    #[error("archive dir is not exist")]
+    ArchiveDirNotExists,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+pub type CSResult<T> = std::result::Result<T, CSError>;

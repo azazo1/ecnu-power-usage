@@ -1,4 +1,3 @@
-use crate::error::Result;
 use chrono::{DateTime, FixedOffset};
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -9,6 +8,9 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod server;
+
+pub use error::{Error, CSError, Result};
+pub use server::{ArchiveMeta, TimeSpan};
 
 #[derive(Deserialize, Serialize, Default)]
 pub struct Cookies {

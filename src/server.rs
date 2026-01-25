@@ -31,7 +31,7 @@ use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info};
 
 use crate::config::{ARCHIVE_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig};
-use crate::error::{Error, Result};
+use crate::error::{CSError, CSResult, Error, Result};
 use crate::{Cookies, Records};
 
 #[derive(serde::Deserialize)]
@@ -46,7 +46,7 @@ struct QueryResponse {
 
 /// 用于指定宿舍电量查询.
 #[derive(Default)]
-pub struct Querier {
+struct Querier {
     config: RoomConfig,
     cookies: Cookies,
     client: Client,
@@ -64,7 +64,7 @@ impl Debug for Querier {
 
 impl Querier {
     #[must_use]
-    pub fn new(config: RoomConfig) -> Querier {
+    fn new(config: RoomConfig) -> Querier {
         Querier {
             config,
             cookies: Default::default(),
@@ -73,7 +73,7 @@ impl Querier {
     }
 
     #[must_use]
-    pub fn new_with_client(config: RoomConfig, client: Client) -> Querier {
+    fn new_with_client(config: RoomConfig, client: Client) -> Querier {
         Querier {
             config,
             cookies: Default::default(),
@@ -81,21 +81,21 @@ impl Querier {
         }
     }
 
-    pub fn set_room_config(&mut self, config: RoomConfig) {
+    fn set_room_config(&mut self, config: RoomConfig) {
         self.config = config;
     }
 
     /// 重新设置有效的 cookies.
-    pub fn refresh(&mut self, cookies: Cookies) {
+    fn refresh(&mut self, cookies: Cookies) {
         self.cookies = cookies.sanitize();
     }
 
     /// 查询查询当前剩余电量 (度)
     /// # Errors
-    /// - [`Error::ReqwestError`][]: see: [`reqwest::RequestBuilder::send`].
-    /// - [`Error::EcnuError`][]: ECNU 未登录 / 查询接口返回错误信息.
+    /// - [`Error::Reqwest`][]: see: [`reqwest::RequestBuilder::send`].
+    /// - [`Error::Ecnu`][]: ECNU 未登录 / 查询接口返回错误信息.
     /// - [`Error::NoDegree`][]: 不应出现此情况, 如果出现了可能是接口返回了错误的数据.
-    pub async fn query_electricity_degree(&self) -> Result<f32> {
+    async fn query_electricity_degree(&self) -> Result<f32> {
         let payload = json!({
             "sysid": 1,
             "roomNo": self.config.room_no.as_str(),
@@ -124,11 +124,11 @@ impl Querier {
             && let Ok(ct) = ct.to_str()
             && !ct.contains("application/json")
         {
-            Err(Error::EcnuError("Permission Denied".to_string()))?
+            Err(Error::Ecnu("permission denied".to_string()))?
         }
         let ret: QueryResponse = resp.json().await?;
         if ret.code != 0 || ret.msg != "成功" {
-            Err(Error::EcnuError(ret.msg))?
+            Err(Error::Ecnu(ret.msg))?
         }
         ret.degree.ok_or(Error::NoDegree)
     }
@@ -175,7 +175,7 @@ where
     }
 
     /// 尝试记录一次电量变化, 只有产生了电量度数的变化才会被记录, 如果被记录了, 那么返回 Ok(true).
-    pub async fn record(&mut self, degree: f32) -> Result<bool> {
+    async fn record(&mut self, degree: f32) -> Result<bool> {
         let now_time = Local::now().fixed_offset();
         if let Some(last_degree) = self.last_degree
             && last_degree.sub(degree).abs() < 0.01
@@ -190,7 +190,7 @@ where
 
 impl Recorder<File> {
     /// 从可读可写文件中加载.
-    pub async fn load_from_rw_file(mut file: File) -> Result<Recorder<File>> {
+    async fn load_from_rw_file(mut file: File) -> Result<Recorder<File>> {
         file.seek(SeekFrom::Start(0)).await?;
 
         let mut last_line = None;
@@ -205,7 +205,7 @@ impl Recorder<File> {
         let last_degree = if let Some(last_line) = last_line {
             let (_, degree) = last_line
                 .split_once(',')
-                .ok_or(Error::DegreeRecordsFormatError)?;
+                .ok_or(Error::InvalidRecordsFormat)?;
             let degree: f32 = degree.trim().parse()?;
             Some(degree)
         } else {
@@ -218,7 +218,7 @@ impl Recorder<File> {
     }
 
     /// 从路径中加载, 如果文件不存在, 文件将被创建, 并返回对应没有任何记录 Recorder.
-    pub async fn load_from_path(records_path: impl AsRef<Path>) -> Result<Recorder<File>> {
+    async fn load_from_path(records_path: impl AsRef<Path>) -> Result<Recorder<File>> {
         let records_path = records_path.as_ref();
         let file = File::options()
             .read(true)
@@ -235,8 +235,8 @@ impl Recorder<File> {
     ///
     /// # Errors
     ///
-    /// - 需要 File 输出对象是 Seekable 和 Readable 的, 不然将会返回 [`Error::IoError`].
-    pub async fn archive(&mut self, time_span: TimeSpan) -> Result<Records> {
+    /// - 需要 File 输出对象是 Seekable 和 Readable 的, 不然将会返回 [`Error::Io`].
+    async fn archive(&mut self, time_span: TimeSpan) -> Result<Records> {
         self.out.seek(SeekFrom::Start(0)).await?;
         let records = Records::from_csv(&mut self.out).await?;
         let mut archived = Vec::new();
@@ -258,7 +258,7 @@ impl Recorder<File> {
     }
 
     /// 从文件中读取已经输出的 records.
-    pub async fn read_records(&mut self) -> Result<Records> {
+    async fn read_records(&mut self) -> Result<Records> {
         self.out.seek(SeekFrom::Start(0)).await?;
         let rst = Records::from_csv(&mut self.out).await;
         self.out.seek(SeekFrom::End(0)).await?;
@@ -274,16 +274,10 @@ struct AppState {
     config_dir: PathBuf,
 }
 
-#[derive(Deserialize, Serialize)]
-pub enum PostRoomResponse {
-    Success,
-    FailedToSave,
-}
-
 async fn post_room(
     State(state): State<Arc<AppState>>,
     Json(room_config): Json<RoomConfig>,
-) -> (StatusCode, Json<PostRoomResponse>) {
+) -> (StatusCode, Json<CSResult<()>>) {
     info!("post room request.");
     state.querier.write().await.config = room_config.clone();
     if let Err(e) = room_config
@@ -291,9 +285,14 @@ async fn post_room(
         .await
     {
         error!("saving room config: {e:?}");
-        (StatusCode::OK, Json(PostRoomResponse::FailedToSave))
+        (
+            StatusCode::OK,
+            Json(Err(CSError::General(
+                "failed to save room config file".to_string(),
+            ))),
+        )
     } else {
-        (StatusCode::OK, Json(PostRoomResponse::Success))
+        (StatusCode::OK, Json(Ok(())))
     }
 }
 
@@ -306,45 +305,31 @@ async fn post_cookies(
     StatusCode::OK
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(tag = "tag", content = "content")]
-pub enum GetRecordsResponse {
-    Ok(Records),
-    Error(String),
-}
-
-async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<GetRecordsResponse>) {
+async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<Records>>) {
     match state.recorder.write().await.read_records().await {
-        Ok(records) => (StatusCode::OK, Json(GetRecordsResponse::Ok(records))),
+        Ok(records) => (StatusCode::OK, Json(Ok(records))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(GetRecordsResponse::Error(e.to_string())),
+            Json(Err(CSError::General(e.to_string()))),
         ),
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "tag", content = "content")]
-pub enum GetDegreeResponse {
-    Logined(f32),
-    NotLogined,
-    RoomConfigMissing,
-    Error(String),
-}
-
-async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<GetDegreeResponse>) {
+async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<f32>>) {
     debug!("get degree request.");
     let querier = state.querier.read().await;
     if querier.config.is_invalid() {
-        return (StatusCode::OK, Json(GetDegreeResponse::RoomConfigMissing));
+        return (StatusCode::OK, Json(Err(CSError::RoomConfigMissing)));
     }
     match querier.query_electricity_degree().await {
-        Ok(degree) => (StatusCode::OK, Json(GetDegreeResponse::Logined(degree))),
+        Ok(degree) => (StatusCode::OK, Json(Ok(degree))),
         Err(e) => match e {
-            Error::EcnuError(_) => (StatusCode::OK, Json(GetDegreeResponse::NotLogined)),
+            Error::Ecnu(_) => (StatusCode::OK, Json(Err(CSError::EcnuNotLogin))),
             e => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(GetDegreeResponse::Error(e.to_string())),
+                Json(Err(CSError::General(format!(
+                    "server querying degree: {e:?}"
+                )))),
             ),
         },
     }
@@ -389,20 +374,10 @@ impl TimeSpan {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct CreateArchiveArgs {
-    pub time_span: TimeSpan,
+pub(crate) struct CreateArchiveArgs {
+    pub(crate) time_span: TimeSpan,
     /// 默认名称为创建的 archive 时间跨度.
-    pub archive_name: Option<String>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(tag = "tag", content = "content")]
-pub enum CreateArchiveResponse {
-    /// 保存的 archive 名.
-    Saved(ArchiveMeta),
-    /// 当前记录为空.
-    Empty,
-    Error(String),
+    pub(crate) archive_name: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -418,7 +393,7 @@ pub struct ArchiveMeta {
 async fn create_archive(
     State(state): State<Arc<AppState>>,
     Json(args): Json<CreateArchiveArgs>,
-) -> (StatusCode, Json<CreateArchiveResponse>) {
+) -> (StatusCode, Json<CSResult<ArchiveMeta>>) {
     info!("create archive request: {args:#?}");
 
     let CreateArchiveArgs {
@@ -432,9 +407,9 @@ async fn create_archive(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(CreateArchiveResponse::Error(format!(
+                Json(Err(CSError::General(format!(
                     "error reading records: {e:?}"
-                ))),
+                )))),
             );
         }
     };
@@ -444,7 +419,7 @@ async fn create_archive(
         Some(x) => x,
         None => {
             // 如果 records 无法计算出时间跨度, 那么说明其为空.
-            return (StatusCode::OK, Json(CreateArchiveResponse::Empty));
+            return (StatusCode::OK, Json(Err(CSError::EmptyArchive)));
         }
     };
 
@@ -473,18 +448,16 @@ async fn create_archive(
                 Err(e) => {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(CreateArchiveResponse::Error(format!(
+                        Json(Err(CSError::General(format!(
                             "error reading archive directory: {e:?}"
-                        ))),
+                        )))),
                     );
                 }
             } {
                 if entry.file_name() == archive_file {
                     return (
                         StatusCode::BAD_REQUEST,
-                        Json(CreateArchiveResponse::Error(
-                            "duplicated archive name".to_string(),
-                        )),
+                        Json(Err(CSError::General("duplicated archive name".to_string()))),
                     );
                 }
             }
@@ -492,9 +465,9 @@ async fn create_archive(
         Err(_) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(CreateArchiveResponse::Error(
+                Json(Err(CSError::General(
                     "archive directory can not be created".to_string(),
-                )),
+                ))),
             );
         }
     }
@@ -511,9 +484,9 @@ async fn create_archive(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(CreateArchiveResponse::Error(format!(
+                Json(Err(CSError::General(format!(
                     "error creating archive file: {e:?}"
-                ))),
+                )))),
             );
         }
     };
@@ -521,9 +494,9 @@ async fn create_archive(
     if let Err(e) = recorder.record_multiple(&archived).await {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(CreateArchiveResponse::Error(format!(
+            Json(Err(CSError::General(format!(
                 "error recording archive: {e:?}"
-            ))),
+            )))),
         );
     }
 
@@ -532,30 +505,25 @@ async fn create_archive(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(CreateArchiveResponse::Error(format!(
+                Json(Err(CSError::General(format!(
                     "error serializing meta: {e:?}"
-                ))),
+                )))),
             );
         }
     };
 
     match fs::write(archive_meta_file, archived_content).await {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(CreateArchiveResponse::Saved(archive_meta)),
-        ),
+        Ok(()) => (StatusCode::OK, Json(Ok(archive_meta))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(CreateArchiveResponse::Error(format!(
-                "error saving meta: {e:?}"
-            ))),
+            Json(Err(CSError::General(format!("error saving meta: {e:?}")))),
         ),
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct DownloadArchiveArgs {
-    pub name: String,
+pub(crate) struct DownloadArchiveArgs {
+    pub(crate) name: String,
 }
 
 async fn download_archive(
@@ -602,10 +570,7 @@ async fn download_archive(
 
 async fn list_archives(
     State(state): State<Arc<AppState>>,
-) -> (
-    StatusCode,
-    std::result::Result<Json<Vec<ArchiveMeta>>, String>,
-) {
+) -> (StatusCode, Json<CSResult<Vec<ArchiveMeta>>>) {
     info!("list archives request.");
 
     let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
@@ -614,7 +579,7 @@ async fn list_archives(
         Err(_) => {
             return (
                 StatusCode::NOT_FOUND,
-                Err("Archive dir is not exist".to_string()),
+                Json(Err(CSError::ArchiveDirNotExists)),
             );
         }
     };
@@ -624,7 +589,9 @@ async fn list_archives(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Err(format!("Listing archives failed: {e:?}")),
+                Json(Err(CSError::General(format!(
+                    "Listing archives failed: {e:?}"
+                )))),
             );
         }
     } {
@@ -647,7 +614,7 @@ async fn list_archives(
         };
         archive_metas.push(meta);
     }
-    (StatusCode::OK, Ok(Json(archive_metas)))
+    (StatusCode::OK, Json(Ok(archive_metas)))
 }
 
 async fn record_loop(state: Arc<AppState>) -> ! {
@@ -671,12 +638,12 @@ async fn record_loop(state: Arc<AppState>) -> ! {
             Err(e) => match loop_state {
                 LoopState::Normal => {
                     error!("querying: {e:?}");
-                    if matches!(e, Error::EcnuError(_)) {
+                    if matches!(e, Error::Ecnu(_)) {
                         loop_state = LoopState::NotLogined;
                     }
                 }
                 LoopState::NotLogined => {
-                    if !matches!(e, Error::EcnuError(_)) {
+                    if !matches!(e, Error::Ecnu(_)) {
                         error!("querying: {e:?}");
                     }
                 }
@@ -686,7 +653,6 @@ async fn record_loop(state: Arc<AppState>) -> ! {
 }
 
 /// todo: tls 支持
-/// todo: archive records
 /// 创建并启动后台服务.
 pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
     const PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -742,9 +708,9 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
     let router = Router::new()
         .route("/post-room", post(post_room))
         .route("/post-cookies", post(post_cookies))
+        .route("/create-archive", post(create_archive))
         .route("/get-records", get(get_records))
         .route("/get-degree", get(get_degree))
-        .route("/create-archive", get(create_archive))
         .route("/download-archive", get(download_archive))
         .route("/list-archives", get(list_archives))
         .with_state(Arc::clone(&app_state));

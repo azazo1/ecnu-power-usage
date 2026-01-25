@@ -1,16 +1,16 @@
-use std::time::Duration;
+use std::{io::Cursor, time::Duration};
 
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
 use crate::{
-    Cookies,
+    Cookies, Records, TimeSpan,
     config::RoomConfig,
-    error::{Error, Result},
-    server::GetDegreeResponse,
+    error::{CSError, CSResult, Error},
+    server::{ArchiveMeta, CreateArchiveArgs, DownloadArchiveArgs},
 };
 
 pub struct BrowserExecutor {
@@ -42,7 +42,7 @@ impl BrowserExecutor {
         }
     }
 
-    pub async fn new(config: BrowserConfig) -> Result<Self> {
+    pub async fn new(config: BrowserConfig) -> crate::Result<Self> {
         let (browser, mut handler) = Browser::launch(config).await?;
         let drop_handle = tokio::spawn(async move {
             while let Some(h) = handler.next().await {
@@ -62,7 +62,7 @@ impl BrowserExecutor {
         })
     }
 
-    async fn wait_for_login(page: &Page) -> Result<()> {
+    async fn wait_for_login(page: &Page) -> crate::Result<()> {
         info!("ecnu checking login state...");
         page.wait_for_navigation().await?;
         while let Some(url) = page.url().await?
@@ -76,7 +76,7 @@ impl BrowserExecutor {
     }
 
     /// 使用浏览器交互式进行 ECNU 登录, 获取登录 cookies, 用于上传给服务器.
-    pub async fn login_cookies(&self) -> Result<Cookies> {
+    pub async fn login_cookies(&self) -> crate::Result<Cookies> {
         let page = self.browser.new_page(Self::QUERY_BILL_URL).await?;
         Self::wait_for_login(&page).await?;
         let cookies = self.browser.get_cookies().await?;
@@ -92,10 +92,10 @@ impl BrowserExecutor {
         }
 
         let Some(j_session_id) = j_session_id else {
-            return Err(Error::CookieError("JSESSIONID not found".to_string()));
+            return Err(Error::Cookie("JSESSIONID not found".to_string()));
         };
         let Some(cookie) = cookie else {
-            return Err(Error::CookieError(
+            return Err(Error::Cookie(
                 "cookie (inside cookies) not found".to_string(),
             ));
         };
@@ -105,14 +105,12 @@ impl BrowserExecutor {
             .property("content")
             .await?
             .ok_or_else(|| {
-                Error::BrowserPageError("x_csrf_token correspondant element not found".to_string())
+                Error::BrowserPage("x_csrf_token correspondant element not found".to_string())
             })?
             .as_str()
             .map(str::to_string)
             .ok_or_else(|| {
-                Error::BrowserPageError(
-                    "x_csrf_token element content type is not string".to_string(),
-                )
+                Error::BrowserPage("x_csrf_token element content type is not string".to_string())
             })?;
 
         page.close().await.ok();
@@ -131,7 +129,7 @@ impl BrowserExecutor {
     /// - [`Error::BrowserPageError`][]: 选择页面被改造了, 此套代码需要更新以适配.
     /// - [`Error::ChromiumError`][]: see: [`Browser::new_page`], [`Self::wait_for_login`],
     ///   [`Page::evaluate`], [`Page::find_element`].
-    pub async fn pick_room(&self) -> Result<RoomConfig> {
+    pub async fn pick_room(&self) -> crate::Result<RoomConfig> {
         let page = self.browser.new_page(Self::QUERY_BILL_URL).await?;
         Self::wait_for_login(&page).await?;
 
@@ -168,10 +166,10 @@ impl BrowserExecutor {
             .await?
             .property("value")
             .await?
-            .ok_or_else(|| Error::BrowserPageError("#elcbuis not found".to_string()))?
+            .ok_or_else(|| Error::BrowserPage("#elcbuis not found".to_string()))?
             .as_str()
             .map(str::to_string)
-            .ok_or_else(|| Error::BrowserPageError("#elcbuis value type is not str".to_string()))?;
+            .ok_or_else(|| Error::BrowserPage("#elcbuis value type is not str".to_string()))?;
         info!("elcbuis: {elcbuis:?}");
 
         let elcarea = page
@@ -179,10 +177,10 @@ impl BrowserExecutor {
             .await?
             .property("value")
             .await?
-            .ok_or_else(|| Error::BrowserPageError("#elcarea not found".to_string()))?
+            .ok_or_else(|| Error::BrowserPage("#elcarea not found".to_string()))?
             .as_str()
             .map(str::to_string)
-            .ok_or_else(|| Error::BrowserPageError("#elcarea value type is not str".to_string()))?;
+            .ok_or_else(|| Error::BrowserPage("#elcarea value type is not str".to_string()))?;
         info!("elcarea: {elcarea:?}");
 
         let room_no = page
@@ -190,10 +188,10 @@ impl BrowserExecutor {
             .await?
             .property("value")
             .await?
-            .ok_or_else(|| Error::BrowserPageError("#elcroom not found".to_string()))?
+            .ok_or_else(|| Error::BrowserPage("#elcroom not found".to_string()))?
             .as_str()
             .map(str::to_string)
-            .ok_or_else(|| Error::BrowserPageError("#elcroom value type is not tr".to_string()))?;
+            .ok_or_else(|| Error::BrowserPage("#elcroom value type is not tr".to_string()))?;
         info!("elcroom(roomNo): {room_no:?}");
 
         page.close().await?;
@@ -201,7 +199,7 @@ impl BrowserExecutor {
         Ok(RoomConfig {
             room_no,
             elcarea: elcarea.parse().map_err(|_| {
-                Error::BrowserPageError("#elcarea can not be converted to int".to_string())
+                Error::BrowserPage("#elcarea can not be converted to int".to_string())
             })?,
             elcbuis,
         })
@@ -223,31 +221,87 @@ impl Client {
         }
     }
 
-    pub async fn get_degree(&self) -> Result<GetDegreeResponse> {
+    pub async fn get_degree(&self) -> crate::Result<f32> {
         let resp = self
             .client
             .get(self.server_base.join("/get-degree")?)
             .send()
             .await?;
-        Ok(resp.json().await?)
+        let result: CSResult<f32> = resp.json().await?;
+        Ok(result?)
     }
 
-    pub async fn post_cookies(&self, cookies: &Cookies) -> Result<()> {
+    pub async fn post_cookies(&self, cookies: &Cookies) -> crate::Result<()> {
         self.client
             .post(self.server_base.join("/post-cookies")?)
             .json(cookies)
             .send()
-            .await?;
+            .await?
+            // 这个请求一般不会产生错误
+            .error_for_status()?;
         Ok(())
     }
 
-    pub async fn post_room(&self, room_config: &RoomConfig) -> Result<()> {
-        self.client
+    pub async fn post_room(&self, room_config: &RoomConfig) -> crate::Result<()> {
+        let resp = self
+            .client
             .post(self.server_base.join("/post-room")?)
             .json(room_config)
             .send()
             .await?;
-        Ok(())
+        let result: CSResult<()> = resp.json().await?;
+        Ok(result?)
+    }
+
+    pub async fn get_records(&self) -> crate::Result<Records> {
+        let resp = self
+            .client
+            .get(self.server_base.join("/get-records")?)
+            .send()
+            .await?;
+        let resp: CSResult<Records> = resp.json().await?;
+        Ok(resp?)
+    }
+
+    pub async fn download_archive(&self, archive_name: String) -> crate::Result<Records> {
+        let resp = self
+            .client
+            .get(self.server_base.join("/donwload_archive")?)
+            .json(&DownloadArchiveArgs { name: archive_name })
+            .send()
+            .await?;
+        match resp.status() {
+            StatusCode::OK => Ok(Records::from_csv(Cursor::new(resp.text().await?)).await?),
+            _ => Err(Error::CS(CSError::General(resp.text().await?))),
+        }
+    }
+
+    pub async fn create_archive(
+        &self,
+        archive_name: Option<String>,
+        time_span: TimeSpan,
+    ) -> crate::Result<ArchiveMeta> {
+        let resp = self
+            .client
+            .post(self.server_base.join("/create-archive")?)
+            .json(&CreateArchiveArgs {
+                archive_name,
+                time_span,
+            })
+            .send()
+            .await?;
+        let result: CSResult<ArchiveMeta> = resp.json().await?;
+        Ok(result?)
+    }
+
+    pub async fn list_archives(&self) -> crate::Result<Vec<ArchiveMeta>> {
+        let resp = self
+            .client
+            .post(self.server_base.join("/list-archives")?)
+            .send()
+            .await?;
+        let result: CSResult<Vec<ArchiveMeta>> = resp.json().await?;
+        Ok(result?)
     }
 
     pub fn set_server_base(&mut self, server_base: Url) {
@@ -272,8 +326,8 @@ impl GuardClient {
 
     async fn with_browser<T>(
         &self,
-        cb: impl AsyncFnOnce(&mut BrowserExecutor) -> Result<T>,
-    ) -> Result<T> {
+        cb: impl AsyncFnOnce(&mut BrowserExecutor) -> crate::Result<T>,
+    ) -> crate::Result<T> {
         let mut be = BrowserExecutor::new(self.browser_config.clone()).await?;
         let rst = cb(&mut be).await;
         be.close().await;
@@ -281,67 +335,61 @@ impl GuardClient {
     }
 
     /// 守护服务端, 保持登录状态.
-    pub async fn guard(self) -> Result<()> {
+    pub async fn guard(self) -> crate::Result<()> {
         // todo: 下面所有的失败 GUI 信息都可以提供延迟提醒.
         // todo: 重试机制.
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
 
             match self.client.get_degree().await {
-                Ok(resp) => match resp {
-                    GetDegreeResponse::Logined(degree) => info!("degree: {degree}"),
-                    GetDegreeResponse::NotLogined => {
-                        let cookies =
-                            match self.with_browser(async |be| be.login_cookies().await).await {
-                                Ok(cookies) => cookies,
-                                Err(e) => {
-                                    error!("getting login cookies: {e:?}");
-                                    // todo!("GUI 提示获取 cookies 失败.");
-                                    continue;
-                                }
-                            };
+                Ok(degree) => info!("degree: {degree}"),
+                Err(Error::CS(CSError::EcnuNotLogin)) => {
+                    let cookies = match self.with_browser(async |be| be.login_cookies().await).await
+                    {
+                        Ok(cookies) => cookies,
+                        Err(e) => {
+                            error!("getting login cookies: {e:?}");
+                            // todo!("GUI 提示获取 cookies 失败.");
+                            continue;
+                        }
+                    };
 
-                        match self.client.post_cookies(&cookies).await {
-                            Ok(()) => {
-                                info!("cookies posted");
-                                // todo!("GUI 显示成功提交 Cookies");
-                            }
-                            Err(e) => {
-                                error!("cookies posting: {e:?}");
-                                // todo!("GUI 显示提交 Cookies 失败");
-                            }
+                    match self.client.post_cookies(&cookies).await {
+                        Ok(()) => {
+                            info!("cookies posted");
+                            // todo!("GUI 显示成功提交 Cookies");
+                        }
+                        Err(e) => {
+                            error!("cookies posting: {e:?}");
+                            // todo!("GUI 显示提交 Cookies 失败");
                         }
                     }
-                    GetDegreeResponse::RoomConfigMissing => {
-                        // todo!("GUI 提示需要进行选择宿舍房间信息")
-                        let room_config =
-                            match self.with_browser(async |be| be.pick_room().await).await {
-                                Ok(room_config) => room_config,
-                                Err(e) => {
-                                    error!("picking room: {e:?}");
-                                    // todo!("GUI 提醒获取房间信息失败");
-                                    continue;
-                                }
-                            };
-                        match self.client.post_room(&room_config).await {
-                            Ok(()) => {
-                                info!("room posted");
-                                // todo!("GUI 提示成功提交 room config");
-                            }
-                            Err(e) => {
-                                error!("room posting: {e:?}");
-                                // todo!("GUI 提示 room 信息提交失败");
-                            }
+                }
+                Err(Error::CS(CSError::RoomConfigMissing)) => {
+                    // todo!("GUI 提示需要进行选择宿舍房间信息")
+                    let room_config = match self.with_browser(async |be| be.pick_room().await).await
+                    {
+                        Ok(room_config) => room_config,
+                        Err(e) => {
+                            error!("picking room: {e:?}");
+                            // todo!("GUI 提醒获取房间信息失败");
+                            continue;
+                        }
+                    };
+                    match self.client.post_room(&room_config).await {
+                        Ok(()) => {
+                            info!("room posted");
+                            // todo!("GUI 提示成功提交 room config");
+                        }
+                        Err(e) => {
+                            error!("room posting: {e:?}");
+                            // todo!("GUI 提示 room 信息提交失败");
                         }
                     }
-                    GetDegreeResponse::Error(e) => {
-                        error!("server getting degree: {e:?}");
-                        // todo!("GUI 提醒服务端请求 degree 失败");
-                    }
-                },
+                }
                 Err(e) => {
                     error!("getting degree: {e:?}");
-                    // todo!("GUI 提醒无法连接到服务端");
+                    // todo!("GUI 提醒获取 degree 失败");
                 }
             }
         }
