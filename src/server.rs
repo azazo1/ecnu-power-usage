@@ -72,15 +72,7 @@ impl Querier {
         }
     }
 
-    #[must_use]
-    fn new_with_client(config: RoomConfig, client: Client) -> Querier {
-        Querier {
-            config,
-            cookies: Default::default(),
-            client,
-        }
-    }
-
+    #[inline]
     fn set_room_config(&mut self, config: RoomConfig) {
         self.config = config;
     }
@@ -279,7 +271,11 @@ async fn post_room(
     Json(room_config): Json<RoomConfig>,
 ) -> (StatusCode, Json<CSResult<()>>) {
     info!("post room request.");
-    state.querier.write().await.config = room_config.clone();
+    state
+        .querier
+        .write()
+        .await
+        .set_room_config(room_config.clone());
     if let Err(e) = room_config
         .save_to_file(state.config_dir.join(ROOM_CONFIG_FILENAME))
         .await
