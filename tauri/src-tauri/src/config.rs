@@ -106,8 +106,8 @@ impl<'a> Drop for ConfigSync<'a> {
 }
 
 pub(crate) struct AppState {
-    config: RwLock<GuiConfig>,
-    client: RwLock<Client>,
+    pub(crate) config: RwLock<GuiConfig>,
+    pub(crate) client: RwLock<Client>,
 }
 
 impl AppState {

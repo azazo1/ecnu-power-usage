@@ -1154,6 +1154,7 @@ name = "ecnu-power-usage-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chromiumoxide",
  "dirs-next",
  "ecnu-power-usage",
  "serde",
