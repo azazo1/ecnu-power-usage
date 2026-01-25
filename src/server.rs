@@ -560,7 +560,7 @@ async fn download_archive(
         }
         Err(_) => {
             // 失败：返回 404 和普通文本
-            (StatusCode::NOT_FOUND, "File not found").into_response()
+            (StatusCode::NOT_FOUND, "Archive not found").into_response()
         }
     }
 }

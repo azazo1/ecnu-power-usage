@@ -42,6 +42,7 @@ impl BrowserExecutor {
         }
     }
 
+    /// 执行, 并伴随浏览器的自动关闭.
     pub async fn with<T>(
         mut self,
         cb: impl AsyncFnOnce(&mut Self) -> crate::Result<T>,
