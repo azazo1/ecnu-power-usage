@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{io, path::PathBuf, string::FromUtf8Error};
 
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +38,8 @@ pub enum Error {
     Csv(#[from] csv_async::Error),
     #[error("cs response: {0}")]
     CS(#[from] CSError),
+    #[error(transparent)]
+    Utf8(#[from] FromUtf8Error),
 }
 
 /// Client-Server error

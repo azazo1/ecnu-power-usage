@@ -475,28 +475,28 @@ async fn create_archive(
         records_num: archived.0.len(),
     };
 
-    let mut recorder = match Recorder::load_from_path(archive_file).await {
+    let archived_content = match archived.to_csv().await {
         Ok(x) => x,
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(Err(CSError::General(format!(
-                    "error creating archive file: {e:?}"
+                    "failed to serialize records: {e:?}"
                 )))),
             );
         }
     };
 
-    if let Err(e) = recorder.record_multiple(&archived).await {
+    if let Err(e) = fs::write(archive_file, archived_content).await {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(Err(CSError::General(format!(
-                "error recording archive: {e:?}"
+                "error writing archive file: {e:?}"
             )))),
         );
     }
 
-    let archived_content = match toml::to_string_pretty(&archive_meta) {
+    let archived_meta_content = match toml::to_string_pretty(&archive_meta) {
         Ok(x) => x,
         Err(e) => {
             return (
@@ -508,13 +508,14 @@ async fn create_archive(
         }
     };
 
-    match fs::write(archive_meta_file, archived_content).await {
-        Ok(()) => (StatusCode::OK, Json(Ok(archive_meta))),
-        Err(e) => (
+    if let Err(e) = fs::write(archive_meta_file, archived_meta_content).await {
+        return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(Err(CSError::General(format!("error saving meta: {e:?}")))),
-        ),
+        );
     }
+
+    (StatusCode::OK, Json(Ok(archive_meta)))
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

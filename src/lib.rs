@@ -9,7 +9,7 @@ pub mod config;
 pub mod error;
 pub mod server;
 
-pub use error::{Error, CSError, Result};
+pub use error::{CSError, Error, Result};
 pub use server::{ArchiveMeta, TimeSpan};
 
 #[derive(Deserialize, Serialize, Default)]
@@ -92,6 +92,15 @@ impl Records {
 
     pub fn iter(&self) -> Iter<'_, (DateTime<FixedOffset>, f32)> {
         self.0.iter()
+    }
+
+    pub async fn to_csv(&self) -> Result<String> {
+        let mut ser = csv_async::AsyncWriterBuilder::new().create_serializer(vec![]);
+        for rec in &self.0 {
+            ser.serialize(rec).await?;
+        }
+        // unwrap: 在内存中写入不会报错.
+        Ok(String::from_utf8(ser.into_inner().await.unwrap())?)
     }
 
     pub async fn from_csv_file(csv_file: impl AsRef<Path>) -> Result<Self> {
