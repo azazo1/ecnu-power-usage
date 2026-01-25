@@ -179,7 +179,7 @@ import {
 } from "echarts/components";
 import VChart from "vue-echarts";
 import { format, differenceInMinutes } from "date-fns";
-import type { ElectricityRecord } from "../utils/electricity";
+import type { ElectricityRecord } from "../utils/records";
 
 // 注册 ECharts 组件
 use([

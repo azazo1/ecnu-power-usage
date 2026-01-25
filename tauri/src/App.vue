@@ -56,7 +56,7 @@
                     </div>
                     <div class="p-4 overflow-auto flex-grow-1">
                         <div class="row g-4">
-                            <div v-for="arc in archiveList" :key="arc.id" class="col-md-6 col-lg-4">
+                            <div v-for="arc in archiveList" :key="arc.name" class="col-md-6 col-lg-4">
                                 <div @click="openArchive(arc)"
                                     class="card h-100 border-success border-opacity-50 hover-card cursor-pointer rounded-4 shadow-sm">
                                     <div class="card-body d-flex flex-column">
@@ -66,8 +66,11 @@
                                                 <i class="bi bi-box-seam fs-3"></i>
                                             </div>
                                             <div class="flex-grow-1">
-                                                <h5 class="card-title fw-bold mb-1 text-dark">{{ arc.name }}</h5>
-                                                <p class="card-text small text-success mb-0">{{ arc.dateRange }}</p>
+                                                <h5 class="card-title fw-bold mb-1 text-dark">{{ arc.name }}
+                                                </h5>
+                                                <p class="card-text small text-success mb-0">{{
+                                                    timeFormatter.format(arc.startTime) }}
+                                                    - {{ timeFormatter.format(arc.endTime) }}</p>
                                             </div>
                                         </div>
                                         <div
@@ -93,18 +96,28 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import DataVisualizer from "./components/DataVisualizer.vue";
-import { fromRawRecords, parseCsvData, type ElectricityRecord } from "./utils/electricity";
+import { fromRawRecords, parseCsvData, type ElectricityRecord } from "./utils/records";
 import { invoke } from "@tauri-apps/api/core";
+import { ArchiveMeta, listArchives } from "./utils/archive";
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
 const currentRecords = ref<ElectricityRecord[]>([]);
-const archiveList = ref<any[]>([]);
+const archiveList = ref<ArchiveMeta[]>([]);
 const selectedArchive = ref<any>(null);
 const selectedArchiveData = ref<ElectricityRecord[]>([]);
 const crateVersion = ref<string>('');
 
 // --- Data Loaders ---
+
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false // 使用24小时制
+});
 
 onMounted(async () => {
     crateVersion.value = await getCrateVersion()
@@ -141,12 +154,9 @@ onMounted(() => {
     refreshArchives();
 });
 
-// 2. 模拟加载 Archive List
-const refreshArchives = () => {
-    archiveList.value = [
-        { id: 1, name: "2025年秋季学期", dateRange: "2025.09.01 - 2026.01.15" },
-        { id: 2, name: "2025年春季学期", dateRange: "2025.03.01 - 2025.07.15" },
-    ];
+// 2. 加载 Archive List
+const refreshArchives = async () => {
+    archiveList.value = await listArchives();
 };
 
 // 3. 模拟加载单个 Archive
@@ -163,10 +173,6 @@ const openArchive = (archive: any) => {
 
 async function getCrateVersion(): Promise<string> {
     return await invoke("crate_version");
-}
-
-async function getRecords(): Promise<ElectricityRecord[]> {
-    return fromRawRecords(await invoke("get_records"));
 }
 </script>
 

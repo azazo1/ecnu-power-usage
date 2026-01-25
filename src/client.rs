@@ -307,7 +307,7 @@ impl Client {
     pub async fn list_archives(&self) -> crate::Result<Vec<ArchiveMeta>> {
         let resp = self
             .client
-            .post(self.server_base.join("/list-archives")?)
+            .get(self.server_base.join("/list-archives")?)
             .send()
             .await?;
         let result: CSResult<Vec<ArchiveMeta>> = resp.json().await?;
@@ -403,5 +403,16 @@ impl GuardClient {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::client::Client;
+
+    #[tokio::test]
+    async fn list_archives() {
+        let client = Client::new("http://localhost:20531".parse().unwrap());
+        dbg!(client.list_archives().await).unwrap();
     }
 }

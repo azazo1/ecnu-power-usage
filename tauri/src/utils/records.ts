@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import {
     parseISO,
     differenceInSeconds,
@@ -64,4 +65,9 @@ export function parseCsvData(csvContent: string): ElectricityRecord[] {
     }
 
     return fromRawRecords(rawRecords);
+}
+
+
+export async function getRecords(): Promise<ElectricityRecord[]> {
+    return fromRawRecords(await invoke("get_records"));
 }
