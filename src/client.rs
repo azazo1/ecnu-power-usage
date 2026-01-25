@@ -42,7 +42,16 @@ impl BrowserExecutor {
         }
     }
 
-    pub async fn new(config: BrowserConfig) -> crate::Result<Self> {
+    pub async fn with<T>(
+        mut self,
+        cb: impl AsyncFnOnce(&mut Self) -> crate::Result<T>,
+    ) -> crate::Result<T> {
+        let result = cb(&mut self).await;
+        self.close().await;
+        result
+    }
+
+    pub async fn launch(config: BrowserConfig) -> crate::Result<Self> {
         let (browser, mut handler) = Browser::launch(config).await?;
         let drop_handle = tokio::spawn(async move {
             while let Some(h) = handler.next().await {
@@ -328,10 +337,10 @@ impl GuardClient {
         &self,
         cb: impl AsyncFnOnce(&mut BrowserExecutor) -> crate::Result<T>,
     ) -> crate::Result<T> {
-        let mut be = BrowserExecutor::new(self.browser_config.clone()).await?;
-        let rst = cb(&mut be).await;
-        be.close().await;
-        rst
+        BrowserExecutor::launch(self.browser_config.clone())
+            .await?
+            .with(cb)
+            .await
     }
 
     /// 守护服务端, 保持登录状态.
