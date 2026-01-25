@@ -93,7 +93,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import DataVisualizer from "./components/DataVisualizer.vue";
-import { parseCsvData, type ElectricityRecord } from "./utils/electricity";
+import { fromRawRecords, parseCsvData, type ElectricityRecord } from "./utils/electricity";
 import { invoke } from "@tauri-apps/api/core";
 
 // --- State ---
@@ -166,7 +166,7 @@ async function getCrateVersion(): Promise<string> {
 }
 
 async function getRecords(): Promise<ElectricityRecord[]> {
-    
+    return fromRawRecords(await invoke("get_records"));
 }
 </script>
 

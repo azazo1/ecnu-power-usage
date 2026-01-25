@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -5,7 +6,7 @@ use std::{
 
 use ecnu_power_usage::client::Client;
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime::RwLock, Url};
+use tauri::{Url, async_runtime::RwLock};
 use tokio::{fs, io};
 use tracing::{info, warn};
 
@@ -56,7 +57,7 @@ impl GuiConfig {
         Ok(fs::write(config_path, toml::to_string_pretty(self)?.as_bytes()).await?)
     }
 
-    fn set_server_base(&mut self, server_base: Url) -> ConfigSync {
+    fn set_server_base(&mut self, server_base: Url) -> ConfigSync<'_> {
         self.server_base = server_base;
         ConfigSync::new(self)
     }

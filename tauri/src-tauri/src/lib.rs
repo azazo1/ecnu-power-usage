@@ -15,7 +15,7 @@ mod commands {
 
     use chromiumoxide::BrowserConfig;
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    use ecnu_power_usage::{client::BrowserExecutor, ArchiveMeta, CSError, Records};
+    use ecnu_power_usage::{ArchiveMeta, CSError, Records, client::BrowserExecutor};
     use serde::Serialize;
     use tauri::State;
     use tokio::fs;
