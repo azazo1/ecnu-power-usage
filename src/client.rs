@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
-use reqwest::{Client, Url};
+use reqwest::Url;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
@@ -208,98 +208,18 @@ impl BrowserExecutor {
     }
 }
 
-pub struct GuardClient {
+pub struct Client {
     /// 服务端地址 e.g. https://localhost:20531
     server_base: Url,
-    client: Client,
-    browser_config: BrowserConfig,
+    client: reqwest::Client,
 }
 
-impl GuardClient {
-    // todo tls
+impl Client {
     #[must_use]
-    pub fn new(server_host: Url) -> Self {
+    pub fn new(server_base: Url) -> Self {
         Self {
-            server_base: server_host,
-            client: Client::default(),
-            browser_config: BrowserConfig::builder().with_head().build().unwrap(),
-        }
-    }
-
-    async fn with_browser<T>(
-        &self,
-        cb: impl AsyncFnOnce(&mut BrowserExecutor) -> Result<T>,
-    ) -> Result<T> {
-        let mut be = BrowserExecutor::new(self.browser_config.clone()).await?;
-        let rst = cb(&mut be).await;
-        be.close().await;
-        rst
-    }
-
-    /// 守护服务端, 保持登录状态.
-    pub async fn guard(self) -> Result<()> {
-        // todo: 下面所有的失败 GUI 信息都可以提供延迟提醒.
-        // todo: 重试机制.
-        loop {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-
-            match self.get_degree().await {
-                Ok(resp) => match resp {
-                    GetDegreeResponse::Logined(degree) => info!("degree: {degree}"),
-                    GetDegreeResponse::NotLogined => {
-                        let cookies =
-                            match self.with_browser(async |be| be.login_cookies().await).await {
-                                Ok(cookies) => cookies,
-                                Err(e) => {
-                                    error!("getting login cookies: {e:?}");
-                                    // todo!("GUI 提示获取 cookies 失败.");
-                                    continue;
-                                }
-                            };
-
-                        match self.post_cookies(&cookies).await {
-                            Ok(()) => {
-                                info!("cookies posted");
-                                // todo!("GUI 显示成功提交 Cookies");
-                            }
-                            Err(e) => {
-                                error!("cookies posting: {e:?}");
-                                // todo!("GUI 显示提交 Cookies 失败");
-                            }
-                        }
-                    }
-                    GetDegreeResponse::RoomConfigMissing => {
-                        // todo!("GUI 提示需要进行选择宿舍房间信息")
-                        let room_config =
-                            match self.with_browser(async |be| be.pick_room().await).await {
-                                Ok(room_config) => room_config,
-                                Err(e) => {
-                                    error!("picking room: {e:?}");
-                                    // todo!("GUI 提醒获取房间信息失败");
-                                    continue;
-                                }
-                            };
-                        match self.post_room(&room_config).await {
-                            Ok(()) => {
-                                info!("room posted");
-                                // todo!("GUI 提示成功提交 room config");
-                            }
-                            Err(e) => {
-                                error!("room posting: {e:?}");
-                                // todo!("GUI 提示 room 信息提交失败");
-                            }
-                        }
-                    }
-                    GetDegreeResponse::Error(e) => {
-                        error!("server getting degree: {e:?}");
-                        // todo!("GUI 提醒服务端请求 degree 失败");
-                    }
-                },
-                Err(e) => {
-                    error!("getting degree: {e:?}");
-                    // todo!("GUI 提醒无法连接到服务端");
-                }
-            }
+            server_base,
+            client: reqwest::Client::default(),
         }
     }
 
@@ -328,5 +248,102 @@ impl GuardClient {
             .send()
             .await?;
         Ok(())
+    }
+
+    pub fn set_server_base(&mut self, server_base: Url) {
+        self.server_base = server_base;
+    }
+}
+
+pub struct GuardClient {
+    client: Client,
+    browser_config: BrowserConfig,
+}
+
+impl GuardClient {
+    // todo tls
+    #[must_use]
+    pub fn new(server_base: Url) -> Self {
+        Self {
+            client: Client::new(server_base),
+            browser_config: BrowserConfig::builder().with_head().build().unwrap(),
+        }
+    }
+
+    async fn with_browser<T>(
+        &self,
+        cb: impl AsyncFnOnce(&mut BrowserExecutor) -> Result<T>,
+    ) -> Result<T> {
+        let mut be = BrowserExecutor::new(self.browser_config.clone()).await?;
+        let rst = cb(&mut be).await;
+        be.close().await;
+        rst
+    }
+
+    /// 守护服务端, 保持登录状态.
+    pub async fn guard(self) -> Result<()> {
+        // todo: 下面所有的失败 GUI 信息都可以提供延迟提醒.
+        // todo: 重试机制.
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            match self.client.get_degree().await {
+                Ok(resp) => match resp {
+                    GetDegreeResponse::Logined(degree) => info!("degree: {degree}"),
+                    GetDegreeResponse::NotLogined => {
+                        let cookies =
+                            match self.with_browser(async |be| be.login_cookies().await).await {
+                                Ok(cookies) => cookies,
+                                Err(e) => {
+                                    error!("getting login cookies: {e:?}");
+                                    // todo!("GUI 提示获取 cookies 失败.");
+                                    continue;
+                                }
+                            };
+
+                        match self.client.post_cookies(&cookies).await {
+                            Ok(()) => {
+                                info!("cookies posted");
+                                // todo!("GUI 显示成功提交 Cookies");
+                            }
+                            Err(e) => {
+                                error!("cookies posting: {e:?}");
+                                // todo!("GUI 显示提交 Cookies 失败");
+                            }
+                        }
+                    }
+                    GetDegreeResponse::RoomConfigMissing => {
+                        // todo!("GUI 提示需要进行选择宿舍房间信息")
+                        let room_config =
+                            match self.with_browser(async |be| be.pick_room().await).await {
+                                Ok(room_config) => room_config,
+                                Err(e) => {
+                                    error!("picking room: {e:?}");
+                                    // todo!("GUI 提醒获取房间信息失败");
+                                    continue;
+                                }
+                            };
+                        match self.client.post_room(&room_config).await {
+                            Ok(()) => {
+                                info!("room posted");
+                                // todo!("GUI 提示成功提交 room config");
+                            }
+                            Err(e) => {
+                                error!("room posting: {e:?}");
+                                // todo!("GUI 提示 room 信息提交失败");
+                            }
+                        }
+                    }
+                    GetDegreeResponse::Error(e) => {
+                        error!("server getting degree: {e:?}");
+                        // todo!("GUI 提醒服务端请求 degree 失败");
+                    }
+                },
+                Err(e) => {
+                    error!("getting degree: {e:?}");
+                    // todo!("GUI 提醒无法连接到服务端");
+                }
+            }
+        }
     }
 }
