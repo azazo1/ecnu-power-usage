@@ -159,13 +159,6 @@ where
         Ok(())
     }
 
-    async fn record_multiple(&mut self, records: &Records) -> Result<()> {
-        for rec in records.iter() {
-            self.record_instant(rec.0, rec.1).await?;
-        }
-        Ok(())
-    }
-
     /// 尝试记录一次电量变化, 只有产生了电量度数的变化才会被记录, 如果被记录了, 那么返回 Ok(true).
     async fn record(&mut self, degree: f32) -> Result<bool> {
         let now_time = Local::now().fixed_offset();
@@ -761,7 +754,9 @@ mod tests {
         let ts = TimeSpan::new_before(offset.with_ymd_and_hms(2026, 1, 25, 11, 30, 0).unwrap());
         let file = File::from(tempfile::tempfile().unwrap());
         let mut recorder = Recorder::load_from_rw_file(file).await.unwrap();
-        recorder.record_multiple(&records).await.unwrap();
+        for &(time, degree) in records.iter() {
+            recorder.record_instant(time, degree).await.unwrap();
+        }
         let archived = recorder.archive(ts).await.unwrap();
         #[rustfmt::skip]
         assert_eq!(
