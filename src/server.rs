@@ -236,13 +236,13 @@ impl Recorder<File> {
     /// # Errors
     ///
     /// - 需要 File 输出对象是 Seekable 和 Readable 的, 不然将会返回 [`Error::IoError`].
-    pub async fn archive(&mut self, time_range: TimeSpan) -> Result<Records> {
+    pub async fn archive(&mut self, time_span: TimeSpan) -> Result<Records> {
         self.out.seek(SeekFrom::Start(0)).await?;
         let records = Records::from_csv(&mut self.out).await?;
         let mut archived = Vec::new();
         let mut retained = Vec::new();
         for rec in records.0 {
-            if time_range.contains(&rec.0) {
+            if time_span.contains(&rec.0) {
                 archived.push(rec);
             } else {
                 retained.push(rec);
@@ -284,7 +284,7 @@ async fn post_room(
     State(state): State<Arc<AppState>>,
     Json(room_config): Json<RoomConfig>,
 ) -> (StatusCode, Json<PostRoomResponse>) {
-    info!("post room request");
+    info!("post room request.");
     state.querier.write().await.config = room_config.clone();
     if let Err(e) = room_config
         .save_to_file(state.config_dir.join(ROOM_CONFIG_FILENAME))
@@ -301,7 +301,7 @@ async fn post_cookies(
     State(state): State<Arc<AppState>>,
     Json(cookies): Json<Cookies>,
 ) -> StatusCode {
-    info!("post cookies request");
+    info!("post cookies request.");
     state.querier.write().await.refresh(cookies);
     StatusCode::OK
 }
@@ -333,7 +333,7 @@ pub enum GetDegreeResponse {
 }
 
 async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<GetDegreeResponse>) {
-    debug!("get degree request");
+    debug!("get degree request.");
     let querier = state.querier.read().await;
     if querier.config.is_invalid() {
         return (StatusCode::OK, Json(GetDegreeResponse::RoomConfigMissing));
@@ -389,52 +389,166 @@ impl TimeSpan {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CreateArchiveArgs {
+    pub time_span: TimeSpan,
+    /// 默认名称为创建的 archive 时间跨度.
+    pub archive_name: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(tag = "tag", content = "content")]
 pub enum CreateArchiveResponse {
     /// 保存的 archive 名.
-    Saved(String),
+    Saved(ArchiveMeta),
     /// 当前记录为空.
     Empty,
     Error(String),
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ArchiveMeta {
+    // 下面这俩时间和 timespan 的区别是其不会为 None.
+    pub start_time: DateTime<FixedOffset>,
+    pub end_time: DateTime<FixedOffset>,
+    pub archive_name: String,
+    pub records_num: usize,
+}
+
 /// 创建 archive, 将符合时间范围的 records 保存到 archives 之中.
 async fn create_archive(
     State(state): State<Arc<AppState>>,
-    Json(time_range): Json<TimeSpan>,
+    Json(args): Json<CreateArchiveArgs>,
 ) -> (StatusCode, Json<CreateArchiveResponse>) {
+    info!("create archive request: {args:#?}");
+
+    let CreateArchiveArgs {
+        time_span,
+        archive_name,
+    } = args;
+
     let mut recorder = state.recorder.write().await;
-    match recorder.archive(time_range).await {
-        Ok(mut archived) => {
-            archived.sort();
-            if let Some((start_time, _)) = archived.time_span() {
-                let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
-                let archive_name = start_time.format("%Y-%m-%d.csv").to_string();
-                fs::create_dir_all(&archive_dir).await.ok(); // 如果失败了会在下面报错;
-                match Recorder::load_from_path(archive_dir.join(&archive_name)).await {
-                    Ok(mut recorder) => match recorder.record_multiple(&archived).await {
-                        Err(e) => (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(CreateArchiveResponse::Error(e.to_string())),
-                        ),
-                        _ => (
-                            StatusCode::OK,
-                            Json(CreateArchiveResponse::Saved(archive_name)),
-                        ),
-                    },
-                    Err(e) => (
+    let mut archived = match recorder.archive(time_span).await {
+        Ok(x) => x,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CreateArchiveResponse::Error(format!(
+                    "error reading records: {e:?}"
+                ))),
+            );
+        }
+    };
+
+    archived.sort();
+    let (start_time, end_time) = match archived.time_span() {
+        Some(x) => x,
+        None => {
+            // 如果 records 无法计算出时间跨度, 那么说明其为空.
+            return (StatusCode::OK, Json(CreateArchiveResponse::Empty));
+        }
+    };
+
+    let archive_name = match archive_name {
+        Some(x) => x,
+        None => {
+            format!(
+                "{}-{}-created_on-{}",
+                start_time.format("%Y%d%m"),
+                end_time.format("%Y%d%m"),
+                Local::now().format("%Y%d%m_%H%M%S")
+            )
+        }
+    };
+
+    let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+    let archive_file = archive_dir.join(format!("{}.csv", archive_name));
+    let archive_meta_file = archive_dir.join(format!("{}.toml", archive_name));
+
+    fs::create_dir_all(&archive_dir).await.ok(); // 如果失败了会在下面报错;
+
+    match fs::read_dir(&archive_dir).await {
+        Ok(mut rd) => {
+            while let Some(entry) = match rd.next_entry().await {
+                Ok(x) => x,
+                Err(e) => {
+                    return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(CreateArchiveResponse::Error(e.to_string())),
-                    ),
+                        Json(CreateArchiveResponse::Error(format!(
+                            "error reading archive directory: {e:?}"
+                        ))),
+                    );
                 }
-            } else {
-                // 如果 records 无法计算出时间跨度, 那么说明其为空.
-                (StatusCode::OK, Json(CreateArchiveResponse::Empty))
+            } {
+                if entry.file_name() == archive_file {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(CreateArchiveResponse::Error(
+                            "duplicated archive name".to_string(),
+                        )),
+                    );
+                }
             }
         }
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CreateArchiveResponse::Error(
+                    "archive directory can not be created".to_string(),
+                )),
+            );
+        }
+    }
+
+    let archive_meta = ArchiveMeta {
+        start_time,
+        end_time,
+        archive_name,
+        records_num: archived.0.len(),
+    };
+
+    let mut recorder = match Recorder::load_from_path(archive_file).await {
+        Ok(x) => x,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CreateArchiveResponse::Error(format!(
+                    "error creating archive file: {e:?}"
+                ))),
+            );
+        }
+    };
+
+    if let Err(e) = recorder.record_multiple(&archived).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CreateArchiveResponse::Error(format!(
+                "error recording archive: {e:?}"
+            ))),
+        );
+    }
+
+    let archived_content = match toml::to_string_pretty(&archive_meta) {
+        Ok(x) => x,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CreateArchiveResponse::Error(format!(
+                    "error serializing meta: {e:?}"
+                ))),
+            );
+        }
+    };
+
+    match fs::write(archive_meta_file, archived_content).await {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(CreateArchiveResponse::Saved(archive_meta)),
+        ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(CreateArchiveResponse::Error(e.to_string())),
+            Json(CreateArchiveResponse::Error(format!(
+                "error saving meta: {e:?}"
+            ))),
         ),
     }
 }
@@ -449,6 +563,7 @@ async fn download_archive(
     Form(args): Form<DownloadArchiveArgs>,
 ) -> Response<Body> {
     info!("download archive request: {}", args.name);
+
     let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
 
     let Some(archive_name) = Path::new(&args.name).file_name() else {
@@ -460,7 +575,7 @@ async fn download_archive(
             .into_response();
     };
 
-    match File::open(archive_dir.join(archive_name)).await {
+    match File::open(archive_dir.join(format!("{}.csv", archive_name.to_str().unwrap()))).await {
         Ok(file) => {
             let stream = ReaderStream::new(file);
             let body = Body::from_stream(stream);
@@ -487,38 +602,52 @@ async fn download_archive(
 
 async fn list_archives(
     State(state): State<Arc<AppState>>,
-) -> (StatusCode, std::result::Result<Json<Vec<String>>, String>) {
+) -> (
+    StatusCode,
+    std::result::Result<Json<Vec<ArchiveMeta>>, String>,
+) {
+    info!("list archives request.");
+
     let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
-    // fs::create_dir_all(&archive_dir).await.ok();
-    match fs::read_dir(archive_dir).await {
-        Ok(mut rd) => {
-            let mut archives = Vec::new();
-            loop {
-                match rd.next_entry().await {
-                    Ok(Some(entry)) => {
-                        let Some(filename) = entry.file_name().to_str().map(|s| s.to_string())
-                        else {
-                            continue;
-                        };
-                        if filename.ends_with(".csv") {
-                            archives.push(filename);
-                        }
-                    }
-                    Ok(None) => break (StatusCode::OK, Ok(Json(archives))),
-                    Err(e) => {
-                        break (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Err(format!("Listing archives failed: {e:?}")),
-                        );
-                    }
-                }
-            }
+    let mut rd = match fs::read_dir(&archive_dir).await {
+        Ok(x) => x,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Err("Archive dir is not exist".to_string()),
+            );
         }
-        Err(_) => (
-            StatusCode::NOT_FOUND,
-            Err("Archive dir is not exist".to_string()),
-        ),
+    };
+    let mut archive_metas = Vec::new();
+    while let Some(entry) = match rd.next_entry().await {
+        Ok(x) => x,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Err(format!("Listing archives failed: {e:?}")),
+            );
+        }
+    } {
+        let Some(meta_filename) = entry
+            .file_name()
+            .to_str()
+            .filter(|s| s.ends_with(".toml"))
+            .map(|s: &str| s.to_string())
+        else {
+            continue;
+        };
+        let meta_file = archive_dir.join(&meta_filename);
+        let meta_content = match fs::read(meta_file).await {
+            Ok(x) => x,
+            Err(_) => continue,
+        };
+        let meta: ArchiveMeta = match toml::from_slice(&meta_content) {
+            Ok(x) => x,
+            Err(_) => continue,
+        };
+        archive_metas.push(meta);
     }
+    (StatusCode::OK, Ok(Json(archive_metas)))
 }
 
 async fn record_loop(state: Arc<AppState>) -> ! {
