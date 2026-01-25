@@ -28,8 +28,8 @@
 
             <!-- Version Info (todo: get version from backend)-->
             <div class="p-3 text-center text-muted small" data-bs-toggle="tooltip" data-bs-placement="right"
-                title="版本 1.0.0 Stable">
-                <span style="opacity: 0.6;">v1.0</span>
+                :title="'版本 v' + crateVersion">
+                <span style="opacity: 0.6;">v{{ crateVersion }}</span>
             </div>
         </aside>
 
@@ -94,6 +94,7 @@
 import { ref, onMounted } from "vue";
 import DataVisualizer from "./components/DataVisualizer.vue";
 import { parseCsvData, type ElectricityRecord } from "./utils/electricity";
+import { invoke } from "@tauri-apps/api/core";
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
@@ -101,8 +102,13 @@ const currentRecords = ref<ElectricityRecord[]>([]);
 const archiveList = ref<any[]>([]);
 const selectedArchive = ref<any>(null);
 const selectedArchiveData = ref<ElectricityRecord[]>([]);
+const crateVersion = ref<string>('');
 
-// --- Mock Data Loaders (todo 替换为 Tauri invoke) ---
+// --- Data Loaders ---
+
+onMounted(async () => {
+    crateVersion.value = await getCrateVersion()
+})
 
 // 1. 模拟加载 Records
 onMounted(() => {
@@ -154,6 +160,14 @@ const openArchive = (archive: any) => {
     selectedArchiveData.value = parseCsvData(mockArchiveCsv);
     selectedArchive.value = archive;
 };
+
+async function getCrateVersion(): Promise<string> {
+    return await invoke("crate_version");
+}
+
+async function getRecords(): Promise<ElectricityRecord[]> {
+    
+}
 </script>
 
 <style scoped>

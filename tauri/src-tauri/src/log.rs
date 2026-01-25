@@ -1,0 +1,32 @@
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
+
+use tokio::fs;
+
+use crate::config::log_dir;
+
+/// 初始化日志输出
+///
+/// 使用 RUST_LOG 控制日志程度, 默认为 debug.
+pub(crate) async fn init() -> crate::Result<WorkerGuard> {
+    let log_dir = log_dir().await?;
+    if !log_dir.exists() {
+        fs::create_dir(&log_dir).await?;
+    }
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, "app.log");
+    let (logging_appender, guard) = tracing_appender::non_blocking(file_appender);
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(logging_appender)
+        .with_ansi(false);
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
+    let stdout_layer = tracing_subscriber::fmt::layer();
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(stdout_layer)
+        .with(file_layer)
+        .init();
+    Ok(guard)
+}
