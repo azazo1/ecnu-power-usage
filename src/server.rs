@@ -30,9 +30,13 @@ use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info};
 
-use crate::config::{ARCHIVE_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig};
+use crate::config::{
+    ARCHIVE_DIRNAME, LOG_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig,
+};
 use crate::error::{CSError, CSResult, Error, Result};
 use crate::{Cookies, Records};
+
+mod log;
 
 #[derive(serde::Deserialize)]
 struct QueryResponse {
@@ -637,16 +641,20 @@ async fn record_loop(state: Arc<AppState>) -> ! {
 /// 创建并启动后台服务.
 pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
     const PKG_NAME: &str = env!("CARGO_PKG_NAME");
-    let backup_data_dir = shellexpand::tilde("~/.local/share");
-    let backup_config_dir = shellexpand::tilde("~/.config");
+    let default_data_dir = shellexpand::tilde("~/.local/share");
+    let default_config_dir = shellexpand::tilde("~/.config");
     let data_dir = dirs_next::data_dir()
-        .unwrap_or(backup_data_dir.to_string().into())
+        .unwrap_or(default_data_dir.to_string().into())
         .join(PKG_NAME);
     let config_dir = dirs_next::config_dir()
-        .unwrap_or(backup_config_dir.to_string().into())
+        .unwrap_or(default_config_dir.to_string().into())
         .join(PKG_NAME);
+    let log_dir = data_dir.join(LOG_DIRNAME);
+    let _guard = log::init(&log_dir).await?;
+
     info!("data dir: {data_dir:?}");
     info!("config dir: {config_dir:?}");
+    info!("log dir: {log_dir:?}");
     let data_dir_cloned = data_dir.clone();
     let config_dir_cloned = config_dir.clone();
     fs::create_dir_all(&data_dir)

@@ -36,3 +36,4 @@ pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const RECORDS_FILENAME: &str = "records.csv";
 pub const ARCHIVE_DIRNAME: &str = "archives";
 pub const ROOM_CONFIG_FILENAME: &str = "room.toml";
+pub const LOG_DIRNAME: &str = "logs";

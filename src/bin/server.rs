@@ -24,8 +24,6 @@ impl App {
     }
 
     async fn run(self) -> anyhow::Result<()> {
-        tracing_subscriber::fmt().init();
-
         run_app(self.args.bind).await?;
         Ok(())
     }
