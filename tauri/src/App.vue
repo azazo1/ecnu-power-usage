@@ -3,7 +3,7 @@
         style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 50%, #a5d6a7 100%);">
         <Transition name="toast-slide">
             <div v-if="toast.show"
-                class="position-fixed top-0 start-50 translate-middle-x mt-4 z-3 shadow-lg rounded-pill bg-white border border-success border-opacity-25 px-4 py-2 d-flex align-items-center gap-2"
+                class="position-fixed bottom-0 start-50 translate-middle-x mb-5 z-100 shadow-lg rounded-pill bg-white border border-success border-opacity-25 px-4 py-2 d-flex align-items-center gap-2"
                 style="min-width: 300px; max-width: 90%;">
                 <i
                     :class="['bi fs-5', toast.type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-danger']"></i>
