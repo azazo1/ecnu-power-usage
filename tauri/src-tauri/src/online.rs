@@ -1,8 +1,4 @@
-use std::{
-    io::{Error, ErrorKind},
-    time::Duration,
-};
-use tokio::net::TcpStream;
+use std::time::Duration;
 
 const ADDRS: &[&str] = &[
     "https://www.baidu.com",

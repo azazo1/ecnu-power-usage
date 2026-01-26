@@ -10,7 +10,7 @@
                     <i
                         :class="['bi fs-4', note.type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-danger']"></i>
 
-                    <div class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex flex-column flex-grow-1 text-break pe-2">
                         <span class="fw-bold text-dark">{{ note.title }}</span>
                         <span v-if="note.message" class="text-muted small mt-1">{{ note.message }}</span>
                     </div>
@@ -86,17 +86,22 @@
                 </DataVisualizer>
             </transition>
         </main>
+
+        <HealthModal :show="currentHealth.kind !== 'Ok'" :health-status="currentHealth" @retry="manualHealthCheck"
+            @error="notifyError" />
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import DataVisualizer from "./components/DataVisualizer.vue";
 import { getRecords, type ElectricityRecord } from "./utils/records";
 import { invoke } from "@tauri-apps/api/core";
 import { Archive, ArchiveMeta, createArchive, downloadArchive, listArchives } from "./utils/archive";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ArchiveList from "./components/ArchiveList.vue";
+import HealthModal from "./components/HealthModal.vue";
+import { healthCheck, HealthStatus } from "./utils/health";
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
@@ -110,7 +115,7 @@ const crateVersion = ref<string>('');
 
 onMounted(async () => {
     crateVersion.value = await getCrateVersion()
-})
+});
 
 // 加载 Records
 onMounted(() => {
@@ -212,26 +217,56 @@ function removeNotification(id: number) {
 }
 
 // --- health check ---
-type HealthKind = 'NoNet' | 'ServerDown' | 'NotLogin' | 'NoRoom' | 'Ok' | 'Unknown';
-interface HealthStatus {
-    kind: HealthKind,
-    message: string | null,
+const currentHealth = ref<HealthStatus>({ kind: 'Ok', message: null });
+let healthCheckTimer: number | null = null;
+
+onMounted(async () => {
+    // 启动轮询，每 5 秒检查一次
+    healthCheckTimer = window.setInterval(async () => {
+        // 如果当前已经在显示模态框，我们可以暂停轮询，或者继续轮询以自动恢复
+        // 这里选择继续轮询，这样网络恢复后模态框会自动消失
+        await performHealthCheck();
+    }, 5000);
+});
+
+// 执行检查并更新状态
+async function performHealthCheck(): Promise<HealthStatus> {
+    const rawStatus = currentHealth.value;
+    const status = await healthCheck();
+    // 只有状态发生改变时才更新，避免不必要的响应式触发（虽然 Vue 会处理基本类型的 diff）
+    if (status.kind !== rawStatus.kind) {
+        console.log(`Health status changed: ${rawStatus.kind} -> ${status.kind}`);
+        currentHealth.value = status;
+
+        // 如果状态恢复正常，顺便刷新一下数据
+        if (status.kind === 'Ok') {
+            refreshRecords();
+            refreshArchives();
+            refreshSelectedArchive();
+        }
+    } else if (status.message !== rawStatus.message) {
+        // 如果 kind 没变但 message 变了也更新一下
+        currentHealth.value = status;
+    }
+    return rawStatus;
 }
 
-async function healthCheck(): Promise<HealthStatus> {
-    try {
-        let kind: HealthKind = await invoke('health_check');
-        return {
-            kind,
-            message: null,
-        }
-    } catch (error) {
-        return {
-            kind: 'Unknown',
-            message: String(error)
-        }
+// 手动触发（用于点击“重试”按钮）
+async function manualHealthCheck() {
+    // 设置为 loading 状态或者是保留当前状态，这里简单直接调逻辑
+    await performHealthCheck();
+    if (currentHealth.value.kind !== 'Ok') {
+        notifyError("状态异常", "请检查相关设置或网络。");
+    } else {
+        notifySuccess("连接恢复", "状态已正常。");
     }
 }
+
+onUnmounted(() => {
+    if (healthCheckTimer) {
+        clearInterval(healthCheckTimer);
+    }
+});
 </script>
 
 <style scoped>
