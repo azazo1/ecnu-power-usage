@@ -274,12 +274,7 @@ async fn post_room(
         .await
     {
         error!("saving room config: {e:?}");
-        (
-            StatusCode::OK,
-            Json(Err(CSError::General(
-                "failed to save room config file".to_string(),
-            ))),
-        )
+        (StatusCode::OK, Json(Err(CSError::SaveRoomConfig)))
     } else {
         (StatusCode::OK, Json(Ok(())))
     }
@@ -297,10 +292,13 @@ async fn post_cookies(
 async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<Records>>) {
     match state.recorder.write().await.read_records().await {
         Ok(records) => (StatusCode::OK, Json(Ok(records))),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(Err(CSError::General(e.to_string()))),
-        ),
+        Err(e) => {
+            error!("reading records from file: {e:?}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Err(CSError::ReadRecords)),
+            )
+        }
     }
 }
 
@@ -314,12 +312,13 @@ async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSR
         Ok(degree) => (StatusCode::OK, Json(Ok(degree))),
         Err(e) => match e {
             Error::Ecnu(_) => (StatusCode::OK, Json(Err(CSError::EcnuNotLogin))),
-            e => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Err(CSError::General(format!(
-                    "server querying degree: {e:?}"
-                )))),
-            ),
+            e => {
+                error!("querying degree: {e:?}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(Err(CSError::QueryDegree)),
+                )
+            }
         },
     }
 }
@@ -394,11 +393,10 @@ async fn create_archive(
     let mut archived = match recorder.archive(time_span).await {
         Ok(x) => x,
         Err(e) => {
+            error!("reading records: {e:?}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Err(CSError::General(format!(
-                    "error reading records: {e:?}"
-                )))),
+                Json(Err(CSError::ReadRecords)),
             );
         }
     };
@@ -435,18 +433,17 @@ async fn create_archive(
             while let Some(entry) = match rd.next_entry().await {
                 Ok(x) => x,
                 Err(e) => {
+                    error!("reading archive dir: {e:?}");
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(Err(CSError::General(format!(
-                            "error reading archive directory: {e:?}"
-                        )))),
+                        Json(Err(CSError::ArchiveDir)),
                     );
                 }
             } {
                 if entry.file_name() == archive_file {
                     return (
                         StatusCode::BAD_REQUEST,
-                        Json(Err(CSError::General("duplicated archive name".to_string()))),
+                        Json(Err(CSError::DuplicatedArchive)),
                     );
                 }
             }
@@ -454,9 +451,7 @@ async fn create_archive(
         Err(_) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Err(CSError::General(
-                    "archive directory can not be created".to_string(),
-                ))),
+                Json(Err(CSError::ArchiveDir)),
             );
         }
     }
@@ -471,40 +466,38 @@ async fn create_archive(
     let archived_content = match archived.to_csv().await {
         Ok(x) => x,
         Err(e) => {
+            error!("serializing records: {e:?}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Err(CSError::General(format!(
-                    "failed to serialize records: {e:?}"
-                )))),
+                Json(Err(CSError::SerializeRecords)),
             );
         }
     };
 
     if let Err(e) = fs::write(archive_file, archived_content).await {
+        error!("writing archive file: {e:?}");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(Err(CSError::General(format!(
-                "error writing archive file: {e:?}"
-            )))),
+            Json(Err(CSError::WriteArchive)),
         );
     }
 
     let archived_meta_content = match toml::to_string_pretty(&archive_meta) {
         Ok(x) => x,
         Err(e) => {
+            error!("serializing archive meta: {e:?}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Err(CSError::General(format!(
-                    "error serializing meta: {e:?}"
-                )))),
+                Json(Err(CSError::SerializeMeta)),
             );
         }
     };
 
     if let Err(e) = fs::write(archive_meta_file, archived_meta_content).await {
+        error!("saving archive meta: {e:?}");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(Err(CSError::General(format!("error saving meta: {e:?}")))),
+            Json(Err(CSError::SaveMeta)),
         );
     }
 
@@ -569,21 +562,17 @@ async fn list_archives(
     let mut rd = match fs::read_dir(&archive_dir).await {
         Ok(x) => x,
         Err(_) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(Err(CSError::ArchiveDirNotExists)),
-            );
+            return (StatusCode::NOT_FOUND, Json(Err(CSError::ArchiveDir)));
         }
     };
     let mut archive_metas = Vec::new();
     while let Some(entry) = match rd.next_entry().await {
         Ok(x) => x,
         Err(e) => {
+            error!("listing archives: {e:?}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Err(CSError::General(format!(
-                    "Listing archives failed: {e:?}"
-                )))),
+                Json(Err(CSError::ListArchive)),
             );
         }
     } {

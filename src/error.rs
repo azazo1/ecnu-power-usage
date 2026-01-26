@@ -54,8 +54,26 @@ pub enum CSError {
     RoomConfigMissing,
     #[error("archive is empty")]
     EmptyArchive,
-    #[error("archive dir is not exist")]
-    ArchiveDirNotExists,
+    #[error("archive dir is not exist or cannot be read")]
+    ArchiveDir,
+    #[error("listing archives failed")]
+    ListArchive,
+    #[error("saving archive meta failed")]
+    SaveMeta,
+    #[error("serializing archive meta failed")]
+    SerializeMeta,
+    #[error("writing archive file failed")]
+    WriteArchive,
+    #[error("serializing records failed")]
+    SerializeRecords,
+    #[error("duplicated archive name")]
+    DuplicatedArchive,
+    #[error("reading records failed")]
+    ReadRecords,
+    #[error("logged into ecnu, but failed to query degree")]
+    QueryDegree,
+    #[error("saving room config failed")]
+    SaveRoomConfig,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

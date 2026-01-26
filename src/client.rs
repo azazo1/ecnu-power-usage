@@ -273,16 +273,29 @@ impl Client {
         Ok(resp?)
     }
 
-    pub async fn download_archive(&self, archive_name: String) -> crate::Result<Records> {
+    pub async fn download_archive(&self, archive_name: impl AsRef<str>) -> crate::Result<Records> {
         let resp = self
             .client
-            .get(self.server_base.join("/donwload_archive")?)
-            .json(&DownloadArchiveArgs { name: archive_name })
+            .get(self.server_base.join("/download-archive")?)
+            .query(&DownloadArchiveArgs {
+                name: archive_name.as_ref().to_string(),
+            })
             .send()
             .await?;
         match resp.status() {
             StatusCode::OK => Ok(Records::from_csv(Cursor::new(resp.text().await?)).await?),
-            _ => Err(Error::CS(CSError::General(resp.text().await?))),
+            status => Err(Error::CS(CSError::General(format!(
+                "{}{}",
+                status,
+                match resp.text().await? {
+                    s if s.is_empty() => {
+                        String::new()
+                    }
+                    s => {
+                        format!(": {}", s)
+                    }
+                }
+            )))),
         }
     }
 
@@ -414,5 +427,11 @@ mod tests {
     async fn list_archives() {
         let client = Client::new("http://localhost:20531".parse().unwrap());
         dbg!(client.list_archives().await).unwrap();
+    }
+
+    #[tokio::test]
+    async fn download_archive() {
+        let client = Client::new("http://localhost:20531".parse().unwrap());
+        dbg!(client.download_archive("temp1").await).unwrap();
     }
 }
