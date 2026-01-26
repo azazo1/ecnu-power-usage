@@ -387,6 +387,41 @@ pub struct ArchiveMeta {
     pub records_num: usize,
 }
 
+impl PartialEq for ArchiveMeta {
+    fn eq(&self, other: &Self) -> bool {
+        self.start_time == other.start_time
+            && self.end_time == other.end_time
+            && self.archive_name == other.archive_name
+            && self.records_num == other.records_num
+    }
+}
+
+impl Eq for ArchiveMeta {}
+
+impl Ord for ArchiveMeta {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.start_time.cmp(&other.start_time) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.archive_name.cmp(&other.archive_name) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.end_time.cmp(&other.end_time) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        self.records_num.cmp(&other.records_num)
+    }
+}
+
+impl PartialOrd for ArchiveMeta {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// 创建 archive, 将符合时间范围的 records 保存到 archives 之中.
 async fn create_archive(
     State(state): State<Arc<AppState>>,
@@ -601,6 +636,8 @@ async fn list_archives(
         };
         archive_metas.push(meta);
     }
+
+    archive_metas.sort();
     (StatusCode::OK, Json(Ok(archive_metas)))
 }
 
