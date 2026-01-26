@@ -14,13 +14,14 @@ mod commands {
     use std::path::PathBuf;
 
     use chromiumoxide::BrowserConfig;
+    use chrono::{DateTime, FixedOffset};
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    use ecnu_power_usage::{ArchiveMeta, CSError, Records, client::BrowserExecutor};
+    use ecnu_power_usage::{client::BrowserExecutor, ArchiveMeta, CSError, Records};
     use serde::Serialize;
     use tauri::State;
     use tokio::fs;
 
-    use crate::config::{self, AppState, GuiConfig};
+    use crate::config::{self, AppState, GuiConfig, ARCHIVE_CACHE_DIRNAME};
 
     #[tauri::command]
     pub(crate) fn crate_version() -> &'static str {
@@ -91,18 +92,20 @@ mod commands {
     pub(crate) async fn download_archive(
         app_state: State<'_, AppState>,
         archive_name: String,
-    ) -> Result<(PathBuf, String), String> {
+    ) -> Result<(PathBuf, Records), String> {
         let archive = app_state
             .client
             .read()
             .await
-            .download_archive(archive_name.clone())
+            .download_archive(&archive_name)
             .await
             .map_err(|e| format!("error downloading archive: {e:?}"))?;
-        let data_dir = config::data_dir()
+        let cache_dir = config::data_dir()
             .await
-            .map_err(|_| "failed to create data directory".to_string())?;
-        let archive_file = data_dir.join(format!("{archive_name}.csv"));
+            .map_err(|_| "failed to create data directory".to_string())?
+            .join(ARCHIVE_CACHE_DIRNAME);
+        fs::create_dir_all(&cache_dir).await.ok();
+        let archive_file = cache_dir.join(format!("{archive_name}.csv"));
         let csv_content = archive
             .to_csv()
             .await
@@ -110,7 +113,7 @@ mod commands {
         fs::write(&archive_file, &csv_content)
             .await
             .map_err(|e| e.to_string())?;
-        Ok((archive_file, csv_content))
+        Ok((archive_file, archive))
     }
 
     #[tauri::command]
@@ -157,6 +160,16 @@ mod commands {
             }
             Err(e) => Err(e.to_string()),
         }
+    }
+
+    #[tauri::command]
+    pub(crate) async fn create_archive(
+        app_state: State<'_, AppState>,
+        start_time: Option<DateTime<FixedOffset>>,
+        end_time: Option<DateTime<FixedOffset>>,
+        name: Option<String>,
+    ) -> Result<(), String> {
+        todo!()
     }
 }
 

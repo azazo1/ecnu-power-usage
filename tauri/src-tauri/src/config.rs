@@ -6,7 +6,7 @@ use std::{
 
 use ecnu_power_usage::client::Client;
 use serde::{Deserialize, Serialize};
-use tauri::{Url, async_runtime::RwLock};
+use tauri::{async_runtime::RwLock, Url};
 use tokio::{fs, io};
 use tracing::{info, warn};
 
@@ -88,13 +88,13 @@ impl<'a> Deref for ConfigSync<'a> {
     type Target = GuiConfig;
 
     fn deref(&self) -> &Self::Target {
-        &self.config
+        self.config
     }
 }
 
 impl<'a> DerefMut for ConfigSync<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.config
+        self.config
     }
 }
 
@@ -143,3 +143,4 @@ impl AppState {
 
 pub(crate) const CONFIG_FILENAME: &str = "gui-config.toml";
 pub(crate) const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+pub(crate) const ARCHIVE_CACHE_DIRNAME: &str = "archive-cache";

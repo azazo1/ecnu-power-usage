@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { parseISO } from "date-fns";
+import { parseISO, formatRFC3339 } from "date-fns";
+import { ElectricityRecord, fromRawRecords, RawRecord } from "./records";
 
 interface RawArchiveMeta {
     start_time: string,
@@ -28,4 +29,18 @@ export async function listArchives(): Promise<ArchiveMeta[]> {
         })
     }
     return metas;
+}
+
+export interface Archive {
+    path: string,
+    content: ElectricityRecord[]
+}
+
+export async function downloadArchive(name: string): Promise<Archive> {
+    let arc: [string, RawRecord[]] = await invoke("download_archive", { archiveName: name });
+    return { path: arc[0], content: fromRawRecords(arc[1]) };
+}
+
+export async function createArchive(startTime: Date | null, endTime: Date | null, name: string | null): Promise<ArchiveMeta> {
+    return await invoke("create_archive", { startTime: startTime && formatRFC3339(startTime), endTime: endTime && formatRFC3339(endTime), name });
 }

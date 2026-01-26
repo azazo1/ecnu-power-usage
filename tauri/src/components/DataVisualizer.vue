@@ -10,6 +10,11 @@
                     <i class="bi bi-arrow-left me-1"></i>
                 </button>
                 <h2 class="h4 mb-0 fw-bold text-success">{{ title }}</h2>
+                <button v-if="archivePath" @click="openArchiveFile"
+                    class="btn btn-outline-secondary btn-sm rounded-circle d-flex align-items-center justify-content-center hover-scale border-1 p-2"
+                    style="width: 32px; height: 32px; --bs-btn-border-color: rgba(0,0,0,0.1);" title="在系统中打开文件">
+                    <i class="bi bi-box-arrow-up-right" style="font-size: 0.9rem;"></i>
+                </button>
             </div>
 
             <!-- View Toggle -->
@@ -134,7 +139,23 @@
                         <i class="bi bi-skip-forward-fill"></i>
                     </button>
                 </div>
+
+                <div class="d-flex gap-2 pt-2 border-top border-success border-opacity-10">
+                    <button
+                        class="btn btn-sm btn-success flex-grow-1 py-1 d-flex justify-content-center align-items-center gap-1"
+                        style="height: 24px; font-size: 0.75rem;" @click="handleArchiveClick">
+                        <i class="bi bi-archive"></i>
+                        <span>归档选中项</span>
+                    </button>
+                </div>
+
             </div>
+
+            <!-- 创建归档 对话框 -->
+            <CreateArchiveDialog :show="isCreateArchiveDialogShow"
+                :startTime="selectionStart !== null ? data[selectionStart].timestamp : null"
+                :endTime="selectionEnd !== null ? data[selectionEnd].timestamp : null"
+                @close="isCreateArchiveDialogShow = false" @confirm="onDialogConfirm" />
 
             <!-- Chart View -->
             <div v-if="viewMode === 'chart'" class="h-100 w-100 p-3 d-flex flex-column">
@@ -180,6 +201,8 @@ import {
 import VChart from "vue-echarts";
 import { format, differenceInMinutes } from "date-fns";
 import type { ElectricityRecord } from "../utils/records";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import CreateArchiveDialog from "./CreateArchiveDialog.vue";
 
 // 注册 ECharts 组件
 use([
@@ -196,9 +219,11 @@ const props = defineProps<{
     data: ElectricityRecord[];
     title: string;
     isArchiveMode?: boolean;
+    /// archive path
+    archivePath: string | null;
 }>();
 
-const emit = defineEmits(["back"]);
+const emit = defineEmits<{ back: [], createArchive: [startTime: Date | null, endTime: Date | null, name: string | null] }>();
 
 // --- 视图切换逻辑 ---
 const viewMode = ref<"list" | "chart">("list");
@@ -492,6 +517,34 @@ const totalStats = computed(() => {
         hours: hours.toFixed(1)
     };
 });
+
+const openArchiveFile = async () => {
+    if (props.archivePath) {
+        try {
+            await revealItemInDir(props.archivePath);
+        } catch (err) {
+            console.error("无法打开 Archive:", err);
+        }
+    }
+}
+
+const isCreateArchiveDialogShow = ref(false);
+
+const handleArchiveClick = () => {
+    isCreateArchiveDialogShow.value = true;
+};
+
+const onDialogConfirm = (name: string | null) => {
+    isCreateArchiveDialogShow.value = false;
+    const start = selectionStart.value;
+    const end = selectionEnd.value;
+    const startTime = start !== null ? props.data[start].timestamp : null;
+    const endTime = end !== null ? props.data[end].timestamp : null;
+
+    emit('createArchive', startTime, endTime, name);
+
+    clearSelection();
+};
 </script>
 
 <style scoped>

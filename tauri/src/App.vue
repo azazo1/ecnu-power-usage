@@ -3,7 +3,7 @@
         style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 50%, #a5d6a7 100%);">
         <!-- Sidebar -->
         <aside class="bg-white shadow-lg d-flex flex-column" style="width: 80px; min-width: 80px;">
-            <!-- Logo -->
+            <!-- Logo (todo 替换成图标, 添加悬停提示, 单击跳转 github)-->
             <div class="p-4 d-flex justify-content-center align-items-center position-relative" data-bs-toggle="tooltip"
                 data-bs-placement="right" title="宿舍电量监控">
                 <span style="font-size: 2.5rem; cursor: pointer;" class="hover-scale">⚡</span>
@@ -37,7 +37,8 @@
         <main class="flex-grow-1 p-4 h-100 overflow-hidden">
             <transition name="fade" mode="out-in">
                 <!-- Current Records View -->
-                <DataVisualizer v-if="currentTab === 'records'" title="📊 当前周期记录" :data="currentRecords" />
+                <DataVisualizer v-if="currentTab === 'records'" title="📊 当前周期记录" :data="currentRecords"
+                    :archive-path="null" />
 
                 <!-- Archives List View -->
                 <div v-else-if="currentTab === 'archives' && !selectedArchive"
@@ -57,7 +58,7 @@
                     <div class="p-4 overflow-auto flex-grow-1">
                         <div class="row g-4">
                             <div v-for="arc in archiveList" :key="arc.name" class="col-md-6 col-lg-4">
-                                <div @click="openArchive(arc)"
+                                <div @click="openArchive(arc.name)"
                                     class="card h-100 border-success border-opacity-50 hover-card cursor-pointer rounded-4 shadow-sm">
                                     <div class="card-body d-flex flex-column">
                                         <div class="d-flex align-items-center gap-3 mb-3">
@@ -86,8 +87,9 @@
                 </div>
 
                 <!-- Archive Detail View -->
-                <DataVisualizer v-else-if="currentTab === 'archives' && selectedArchive" :title="selectedArchive.name"
-                    :data="selectedArchiveData" is-archive-mode @back="selectedArchive = null" />
+                <DataVisualizer v-else-if="currentTab === 'archives' && selectedArchive" :title="selectedArchive"
+                    :data="selectedArchiveData.content" is-archive-mode @back="selectedArchive = null"
+                    :archive-path="selectedArchiveData.path" />
             </transition>
         </main>
     </div>
@@ -96,16 +98,16 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import DataVisualizer from "./components/DataVisualizer.vue";
-import { fromRawRecords, parseCsvData, type ElectricityRecord } from "./utils/records";
+import { getRecords, type ElectricityRecord } from "./utils/records";
 import { invoke } from "@tauri-apps/api/core";
-import { ArchiveMeta, listArchives } from "./utils/archive";
+import { Archive, ArchiveMeta, downloadArchive, listArchives } from "./utils/archive";
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
 const currentRecords = ref<ElectricityRecord[]>([]);
 const archiveList = ref<ArchiveMeta[]>([]);
-const selectedArchive = ref<any>(null);
-const selectedArchiveData = ref<ElectricityRecord[]>([]);
+const selectedArchive = ref<string | null>(null);
+const selectedArchiveData = ref<Archive>({ path: "", content: [] });
 const crateVersion = ref<string>('');
 
 // --- Data Loaders ---
@@ -123,52 +125,24 @@ onMounted(async () => {
     crateVersion.value = await getCrateVersion()
 })
 
-// 1. 模拟加载 Records
-onMounted(() => {
-    // 模拟 CSV 数据
-    const mockCsv = `
-2026-01-24T14:35:32+08:00,33.43
-2026-01-24T16:00:00+08:00,33.10
-2026-01-24T18:00:00+08:00,32.10
-2026-01-24T20:30:00+08:00,31.50
-2026-01-24T22:00:00+08:00,30.90
-2026-01-25T00:00:00+08:00,30.50
-2026-01-25T02:00:00+08:00,30.15
-2026-01-25T04:00:00+08:00,29.80
-2026-01-25T06:00:00+08:00,29.00
-2026-01-25T08:00:00+08:00,28.00
-2026-01-25T09:30:00+08:00,27.85
-2026-01-25T11:00:00+08:00,27.60
-2026-01-25T12:00:00+08:00,27.50
-2026-01-25T13:30:00+08:00,27.10
-2026-01-25T15:00:00+08:00,26.40
-2026-01-25T16:30:00+08:00,25.80
-2026-01-25T18:00:00+08:00,25.00
-2026-01-25T19:30:00+08:00,24.10
-2026-01-25T21:00:00+08:00,23.50
-2026-01-25T22:30:00+08:00,22.80
-2026-01-26T00:00:00+08:00,22.00
-  `;
-    currentRecords.value = parseCsvData(mockCsv);
-
-    refreshArchives();
+// todo records 刷新按钮
+// 加载 Records
+onMounted(async () => {
+    await refreshRecords();
+    await refreshArchives();
 });
 
-// 2. 加载 Archive List
-const refreshArchives = async () => {
+async function refreshRecords() {
+    currentRecords.value = await getRecords();
+};
+
+async function refreshArchives() {
     archiveList.value = await listArchives();
 };
 
-// 3. 模拟加载单个 Archive
-const openArchive = (archive: any) => {
-    // 这里应该调用 Tauri 后端读取文件
-    const mockArchiveCsv = `
-2025-09-01T00:00:00+08:00,100.00
-2025-09-02T00:00:00+08:00,95.00
-2025-09-03T00:00:00+08:00,90.00
-  `;
-    selectedArchiveData.value = parseCsvData(mockArchiveCsv);
-    selectedArchive.value = archive;
+async function openArchive(archiveName: string) {
+    selectedArchiveData.value = await downloadArchive(archiveName);
+    selectedArchive.value = archiveName;
 };
 
 async function getCrateVersion(): Promise<string> {
