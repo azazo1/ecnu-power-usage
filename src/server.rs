@@ -516,6 +516,7 @@ pub(crate) struct DownloadArchiveArgs {
     pub(crate) name: String,
 }
 
+/// 这里的 Form 需要使用 reqwest .query() 的方式给入, 而不是 .form().
 async fn download_archive(
     State(state): State<Arc<AppState>>,
     Form(args): Form<DownloadArchiveArgs>,
@@ -524,16 +525,20 @@ async fn download_archive(
 
     let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
 
-    let Some(archive_name) = Path::new(&args.name).file_name() else {
+    let archive_name = Path::new(&args.name).file_name().and_then(|s| s.to_str());
+    let (true, Some(archive_name)) = (
+        sanitize_filename::is_sanitized(&args.name),
+        archive_name.filter(|f| f == &args.name),
+    ) else {
         return Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .header(CONTENT_TYPE, "text/plain; charset=utf-8")
-            .body(Body::new("no archive name in request".to_string()))
+            .body(Body::new("invalid archive name".to_string()))
             .unwrap()
             .into_response();
     };
 
-    match File::open(archive_dir.join(format!("{}.csv", archive_name.to_str().unwrap()))).await {
+    match File::open(archive_dir.join(format!("{}.csv", archive_name))).await {
         Ok(file) => {
             let stream = ReaderStream::new(file);
             let body = Body::from_stream(stream);
@@ -542,10 +547,7 @@ async fn download_archive(
                 .header("Content-Type", "text/csv")
                 .header(
                     "Content-Disposition",
-                    format!(
-                        "attachment; filename=\"{}\"",
-                        archive_name.to_string_lossy()
-                    ),
+                    format!("attachment; filename=\"{}\"", archive_name),
                 )
                 .body(body)
                 .unwrap()
