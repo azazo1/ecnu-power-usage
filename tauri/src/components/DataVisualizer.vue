@@ -526,7 +526,6 @@ const handleArchiveClick = () => {
 };
 
 const onDialogConfirm = (name: string | null) => {
-    isCreateArchiveDialogShow.value = false;
     const start = selectionStart.value;
     const end = selectionEnd.value;
     const startTime = start !== null ? props.data[start].timestamp : null;
@@ -534,6 +533,7 @@ const onDialogConfirm = (name: string | null) => {
 
     emit('createArchive', startTime, endTime, name);
 
+    isCreateArchiveDialogShow.value = false;
     clearSelection();
 };
 </script>

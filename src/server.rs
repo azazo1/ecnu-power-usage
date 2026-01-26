@@ -18,7 +18,7 @@ use axum::{
     extract::State,
     http::{Response, StatusCode, header::COOKIE},
 };
-use chrono::{DateTime, FixedOffset, Local, TimeZone};
+use chrono::{DateTime, FixedOffset, Local, TimeZone, Timelike};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
@@ -165,7 +165,7 @@ where
 
     /// 尝试记录一次电量变化, 只有产生了电量度数的变化才会被记录, 如果被记录了, 那么返回 Ok(true).
     async fn record(&mut self, degree: f32) -> Result<bool> {
-        let now_time = Local::now().fixed_offset();
+        let now_time = Local::now().fixed_offset().with_nanosecond(0).unwrap();
         if let Some(last_degree) = self.last_degree
             && last_degree.sub(degree).abs() < 0.01
         {
