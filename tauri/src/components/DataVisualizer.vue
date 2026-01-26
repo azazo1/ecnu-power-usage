@@ -349,6 +349,17 @@ const chartOption = computed(() => {
     const kwhsData = props.data.map((d) => [d.timestamp.getTime(), d.kwh]);
     const speedsData = props.data.map((d) => [d.timestamp.getTime(), parseFloat((d.speed * 24).toFixed(3))]);
 
+    let dataZoom;
+    if (props.data.length >= 2) {
+        dataZoom = [
+            { type: "inside", start: 0, end: 100 },
+            { type: "slider", start: 0, end: 100, bottom: 10 },
+        ];
+    } else {
+        console.log("null")
+        dataZoom = null;
+    }
+
     return {
         color: ["#10b981", "#f97316"],
         tooltip: {
@@ -383,10 +394,7 @@ const chartOption = computed(() => {
             textStyle: { color: "#047857", fontWeight: "bold" },
         },
         grid: { left: "3%", right: "4%", bottom: "15%", containLabel: true },
-        dataZoom: [
-            { type: "inside", start: 0, end: 100 },
-            { type: "slider", start: 0, end: 100, bottom: 10 },
-        ],
+        dataZoom,
         xAxis: {
             type: "time",
             boundaryGap: false,
