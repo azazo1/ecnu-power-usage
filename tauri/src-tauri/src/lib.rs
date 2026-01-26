@@ -16,7 +16,7 @@ mod commands {
     use chromiumoxide::BrowserConfig;
     use chrono::{DateTime, FixedOffset};
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    use ecnu_power_usage::{client::BrowserExecutor, ArchiveMeta, CSError, Records};
+    use ecnu_power_usage::{client::BrowserExecutor, ArchiveMeta, CSError, Records, TimeSpan};
     use serde::Serialize;
     use tauri::State;
     use tokio::fs;
@@ -168,8 +168,14 @@ mod commands {
         start_time: Option<DateTime<FixedOffset>>,
         end_time: Option<DateTime<FixedOffset>>,
         name: Option<String>,
-    ) -> Result<(), String> {
-        todo!()
+    ) -> Result<ArchiveMeta, String> {
+        app_state
+            .client
+            .read()
+            .await
+            .create_archive(name, TimeSpan::new(start_time, end_time))
+            .await
+            .map_err(|e| format!("failed to create archive: {e:?}"))
     }
 }
 
@@ -193,6 +199,7 @@ pub async fn run() -> anyhow::Result<()> {
             list_archives,
             get_degree,
             health_check,
+            create_archive
         ])
         .run(tauri::generate_context!())
         .with_context(|| "error launch tauri app")?;
