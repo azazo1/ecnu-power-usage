@@ -16,7 +16,11 @@ pub(crate) async fn init() -> crate::Result<WorkerGuard> {
     if !log_dir.exists() {
         fs::create_dir(&log_dir).await?;
     }
-    let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, "app.log");
+    let file_appender = RollingFileAppender::builder()
+        .filename_prefix("app")
+        .rotation(Rotation::DAILY)
+        .filename_suffix("log")
+        .build(log_dir)?;
     let (logging_appender, guard) = tracing_appender::non_blocking(file_appender);
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(logging_appender)

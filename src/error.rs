@@ -40,6 +40,8 @@ pub enum Error {
     CS(#[from] CSError),
     #[error(transparent)]
     Utf8(#[from] FromUtf8Error),
+    #[error(transparent)]
+    Log(#[from] tracing_appender::rolling::InitError),
 }
 
 /// Client-Server error
