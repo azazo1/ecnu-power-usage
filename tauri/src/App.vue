@@ -28,8 +28,8 @@
                         style="width: 48px; height: 48px;">
                         <i class="bi bi-lightning-charge-fill fs-3"></i>
                     </div>
-                    <div class="position-absolute top-50 start-50 translate-middle bg-success rounded-circle opacity-25 pulse-ring"
-                        style="width: 60px; height: 60px; z-index: -1;"></div>
+                    <div class="position-absolute top-50 start-50 translate-middle bg-success rounded-circle pulse-ring"
+                        style="width: 60px; height: 60px;"></div>
                 </button>
             </div>
 
@@ -301,5 +301,51 @@ function hideToast() {
 .fade-leave-to {
     opacity: 0;
     transform: translateY(-10px);
+}
+
+/* Toast Transition */
+.toast-slide-enter-active,
+.toast-slide-leave-active {
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.toast-slide-enter-from,
+.toast-slide-leave-to {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+}
+
+/* Logo Animation */
+.hover-logo {
+    transition: transform 0.3s ease;
+}
+
+.hover-logo:hover {
+    transform: scale(1.05);
+}
+
+.pulse-ring {
+    opacity: 0;
+}
+
+.pulse-ring:hover {
+    animation: pulse 1.3s infinite forwards;
+}
+
+@keyframes pulse {
+    0% {
+        transform: translate(-50%, -50%) scale(0.95);
+        opacity: 0.3;
+    }
+
+    70% {
+        transform: translate(-50%, -50%) scale(1.2);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translate(-50%, -50%) scale(0.95);
+        opacity: 0;
+    }
 }
 </style>
