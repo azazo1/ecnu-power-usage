@@ -210,6 +210,28 @@ function addNotification(title: string, message: string, type: 'success' | 'erro
 function removeNotification(id: number) {
     notifications.value = notifications.value.filter(n => n.id !== id);
 }
+
+// --- health check ---
+type HealthKind = 'NoNet' | 'ServerDown' | 'NotLogin' | 'NoRoom' | 'Ok' | 'Unknown';
+interface HealthStatus {
+    kind: HealthKind,
+    message: string | null,
+}
+
+async function healthCheck(): Promise<HealthStatus> {
+    try {
+        let kind: HealthKind = await invoke('health_check');
+        return {
+            kind,
+            message: null,
+        }
+    } catch (error) {
+        return {
+            kind: 'Unknown',
+            message: String(error)
+        }
+    }
+}
 </script>
 
 <style scoped>

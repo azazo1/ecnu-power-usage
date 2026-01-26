@@ -3,6 +3,7 @@ use anyhow::Context;
 mod config;
 mod error;
 mod log;
+mod online;
 
 use chromiumoxide::BrowserConfig;
 use config::AppState;
@@ -20,8 +21,12 @@ mod commands {
     use serde::Serialize;
     use tauri::State;
     use tokio::fs;
+    use tracing::error;
 
-    use crate::config::{self, AppState, GuiConfig, ARCHIVE_CACHE_DIRNAME};
+    use crate::{
+        config::{self, AppState, GuiConfig, ARCHIVE_CACHE_DIRNAME},
+        online,
+    };
 
     #[tauri::command]
     pub(crate) fn crate_version() -> &'static str {
@@ -146,6 +151,8 @@ mod commands {
         Ok,
         NoRoom,
         NotLogin,
+        ServerDown,
+        NoNet,
     }
 
     #[tauri::command]
@@ -157,6 +164,14 @@ mod commands {
             Err(ecnu_power_usage::Error::CS(CSError::EcnuNotLogin)) => Ok(HealthStatus::NotLogin),
             Err(ecnu_power_usage::Error::CS(CSError::RoomConfigMissing)) => {
                 Ok(HealthStatus::NoRoom)
+            }
+            Err(ecnu_power_usage::Error::Reqwest(e)) => {
+                error!("health check reqwest: {e:?}");
+                if online::check(None).await {
+                    Ok(HealthStatus::ServerDown)
+                } else {
+                    Ok(HealthStatus::NoNet)
+                }
             }
             Err(e) => Err(e.to_string()),
         }
