@@ -16,17 +16,21 @@ export interface ArchiveMeta {
     recordsNum: number,
 }
 
+function fromRawMeta(rawMeta: RawArchiveMeta): ArchiveMeta {
+    return {
+        endTime: parseISO(rawMeta.end_time),
+        startTime: parseISO(rawMeta.start_time),
+        name: rawMeta.archive_name,
+        recordsNum: rawMeta.records_num
+    };
+}
+
 export async function listArchives(): Promise<ArchiveMeta[]> {
     let rawMetas: RawArchiveMeta[] = await invoke("list_archives");
     let metas: ArchiveMeta[] = [];
     for (let i = 0; i < rawMetas.length; ++i) {
-        const rmeta = rawMetas[i];
-        metas.push({
-            endTime: parseISO(rmeta.end_time),
-            startTime: parseISO(rmeta.start_time),
-            name: rmeta.archive_name,
-            recordsNum: rmeta.records_num
-        })
+        const rawMeta = rawMetas[i];
+        metas.push(fromRawMeta(rawMeta))
     }
     return metas;
 }
@@ -42,5 +46,6 @@ export async function downloadArchive(name: string): Promise<Archive> {
 }
 
 export async function createArchive(startTime: Date | null, endTime: Date | null, name: string | null): Promise<ArchiveMeta> {
-    return await invoke("create_archive", { startTime: startTime && formatRFC3339(startTime), endTime: endTime && formatRFC3339(endTime), name });
+    let rawMeta: RawArchiveMeta = await invoke("create_archive", { startTime: startTime && formatRFC3339(startTime), endTime: endTime && formatRFC3339(endTime), name });
+    return fromRawMeta(rawMeta);
 }

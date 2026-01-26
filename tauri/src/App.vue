@@ -1,21 +1,26 @@
 <template>
     <div class="d-flex vh-100 bg-gradient"
         style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 50%, #a5d6a7 100%);">
-        <Transition name="toast-slide">
-            <div v-if="toast.show"
-                class="position-fixed bottom-0 start-50 translate-middle-x mb-5 z-100 shadow-lg rounded-pill bg-white border border-success border-opacity-25 px-4 py-2 d-flex align-items-center gap-2"
-                style="min-width: 300px; max-width: 90%;">
-                <i
-                    :class="['bi fs-5', toast.type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-danger']"></i>
-                <div class="d-flex flex-column flex-grow-1">
-                    <span class="fw-bold text-dark" style="font-size: 0.9rem;">{{ toast.title }}</span>
-                    <span v-if="toast.message" class="text-muted small">{{ toast.message }}</span>
+        <div class="position-fixed top-0 end-0 p-4 z-100 d-flex flex-column gap-2" style="max-width: 400px;">
+            <TransitionGroup name="notification-list">
+                <div v-for="note in notifications" :key="note.id"
+                    class="notification-item shadow-lg rounded-4 bg-white border border-opacity-25 px-4 py-3 d-flex align-items-start gap-3"
+                    :class="note.type === 'success' ? 'border-success' : 'border-danger'">
+
+                    <i
+                        :class="['bi fs-4', note.type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-danger']"></i>
+
+                    <div class="d-flex flex-column flex-grow-1">
+                        <span class="fw-bold text-dark">{{ note.title }}</span>
+                        <span v-if="note.message" class="text-muted small mt-1">{{ note.message }}</span>
+                    </div>
+
+                    <button @click="removeNotification(note.id)" class="btn btn-sm btn-link text-secondary p-0">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
                 </div>
-                <button @click="hideToast" class="btn btn-sm btn-link text-secondary p-0 ms-2">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-        </Transition>
+            </TransitionGroup>
+        </div>
 
         <!-- Sidebar -->
         <aside class="bg-white shadow-lg d-flex flex-column" style="width: 80px; min-width: 80px;">
@@ -152,28 +157,44 @@ onMounted(async () => {
 })
 
 // 加载 Records
-onMounted(async () => {
-    await refreshRecords();
-    await refreshArchives();
+onMounted(() => {
+    refreshRecords();
+    refreshArchives();
 });
 
 async function refreshRecords() {
-    currentRecords.value = await getRecords();
+    try {
+        currentRecords.value = await getRecords();
+    } catch (e) {
+        notifyError("获取当前记录失败", `获取内容失败: ${e}`);
+    }
 }
 
 async function refreshArchives() {
-    archiveList.value = await listArchives();
+    try {
+        archiveList.value = await listArchives();
+    } catch (e) {
+        notifyError("获取归档列表失败", `获取内容失败: ${e}`);
+    }
 }
 
 async function refreshSelectedArchive() {
     if (selectedArchive.value != null) {
-        selectedArchiveData.value = await downloadArchive(selectedArchive.value);
+        try {
+            selectedArchiveData.value = await downloadArchive(selectedArchive.value);
+        } catch (e) {
+            notifyError("获取归档记录失败", `${e}`);
+        }
     }
 }
 
 async function openArchive(archiveName: string) {
-    selectedArchiveData.value = await downloadArchive(archiveName);
-    selectedArchive.value = archiveName;
+    try {
+        selectedArchiveData.value = await downloadArchive(archiveName);
+        selectedArchive.value = archiveName;
+    } catch (e) {
+        notifyError("打开归档失败", `${e}`);
+    }
 };
 
 async function getCrateVersion(): Promise<string> {
@@ -183,37 +204,55 @@ async function getCrateVersion(): Promise<string> {
 async function handleCreateArchive(startTime: Date | null, endTime: Date | null, name: string | null) {
     try {
         let meta = await createArchive(startTime, endTime, name);
+        console.log(meta);
         // 触发成功通知
-        showToast('归档创建成功', `已归档 ${meta.recordsNum} 条记录`);
+        notifySuccess('归档创建成功', `已归档 ${meta.recordsNum} 条记录`);
 
         await refreshRecords();
         await refreshArchives();
     } catch (error) {
         console.error(error);
-        showToast('归档创建失败', `${error}\n请检查后端日志获取更详细内容`, 'error');
+        notifyError('归档创建失败', `${error}\n请检查后端日志获取更详细内容`);
     }
 }
 
-// --- Toast ---
+// --- Notification ---
 
-const toast = ref<{ show: boolean, title: string, message?: string, type: 'success' | 'error' }>({
-    show: false,
-    title: '',
-    type: 'success'
-});
-let toastTimer: number | null = null;
-
-function showToast(title: string, message: string = '', type: 'success' | 'error' = 'success', timeout: number = 3000) {
-    console.log("open toast", title);
-    if (toastTimer) clearTimeout(toastTimer);
-    toast.value = { show: true, title, message, type };
-    toastTimer = setTimeout(() => {
-        toast.value.show = false;
-    }, timeout);
+interface Notification {
+    id: number;
+    title: string;
+    message?: string;
+    type: 'success' | 'error';
 }
 
-function hideToast() {
-    toast.value.show = false;
+const notifications = ref<Notification[]>([]);
+let nextId = 0;
+
+function notifySuccess(title: string, message: string = '') {
+    console.log("emit info", { title, message })
+    addNotification(title, message, 'success');
+}
+
+function notifyError(title: string, message: string = '') {
+    console.log("emit error", { title, message })
+    addNotification(title, message, 'error');
+}
+
+function addNotification(title: string, message: string, type: 'success' | 'error') {
+    const id = nextId++;
+    const newNotif = { id, title, message, type };
+
+    // 堆叠在数组开头（显示在最上方）或结尾（显示在最下方）
+    notifications.value.push(newNotif);
+
+    // 3秒后自动移除
+    setTimeout(() => {
+        removeNotification(id);
+    }, 4000);
+}
+
+function removeNotification(id: number) {
+    notifications.value = notifications.value.filter(n => n.id !== id);
 }
 </script>
 
@@ -283,7 +322,7 @@ function hideToast() {
     cursor: pointer;
 }
 
-/* Fade transition */
+/* 标签页切换动画 Fade transition */
 .fade-enter-active {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -302,16 +341,38 @@ function hideToast() {
     transform: translateY(-10px);
 }
 
-/* Toast Transition */
-.toast-slide-enter-active,
-.toast-slide-leave-active {
+/* 通知列表动画 */
+.notification-list-enter-active,
+.notification-list-leave-active {
     transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.toast-slide-enter-from,
-.toast-slide-leave-to {
+.notification-list-enter-from {
     opacity: 0;
-    transform: translate(-50%, -20px);
+    transform: translateX(50px) scale(0.9);
+}
+
+.notification-list-leave-to {
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+/* 关键：处理列表项移动动画 */
+.notification-list-move {
+    transition: transform 0.4s ease;
+}
+
+/* 确保离开时脱离文档流，让其他元素平滑滑动 */
+.notification-list-leave-active {
+    position: absolute;
+    width: 100%;
+    /* 保持原有宽度防止坍塌 */
+}
+
+.notification-item {
+    pointer-events: auto;
+    /* 确保按钮可点击 */
+    z-index: 1000;
 }
 
 /* Logo Animation */
