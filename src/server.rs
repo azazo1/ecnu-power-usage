@@ -19,7 +19,6 @@ use axum::{
     http::{Response, StatusCode, header::COOKIE},
 };
 use chrono::{DateTime, FixedOffset, Local, TimeZone, Timelike};
-use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -263,6 +262,11 @@ struct AppState {
     config_dir: PathBuf,
 }
 
+fn is_valid_archive_name(name: &str) -> bool {
+    let archive_name = Path::new(name).file_name().and_then(|s| s.to_str());
+    sanitize_filename::is_sanitized(name) && archive_name.is_some_and(|f| f == name)
+}
+
 async fn post_room(
     State(state): State<Arc<AppState>>,
     Json(room_config): Json<RoomConfig>,
@@ -415,14 +419,20 @@ async fn create_archive(
     };
 
     let archive_name = match archive_name {
-        Some(x) => x,
+        Some(x) if is_valid_archive_name(&x) => x,
         None => {
             format!(
-                "{}-{}-created_on-{}",
+                "{}-{}-by-{}",
                 start_time.format("%Y%d%m"),
                 end_time.format("%Y%d%m"),
                 Local::now().format("%Y%d%m_%H%M%S")
             )
+        }
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Err(CSError::InvalidArchiveName)),
+            );
         }
     };
 
@@ -522,17 +532,10 @@ async fn download_archive(
 
     let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
 
-    let archive_name = Path::new(&args.name).file_name().and_then(|s| s.to_str());
-    let (true, Some(archive_name)) = (
-        sanitize_filename::is_sanitized(&args.name),
-        archive_name.filter(|f| f == &args.name),
-    ) else {
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .header(CONTENT_TYPE, "text/plain; charset=utf-8")
-            .body(Body::new("invalid archive name".to_string()))
-            .unwrap()
-            .into_response();
+    let archive_name = if is_valid_archive_name(&args.name) {
+        args.name
+    } else {
+        return (StatusCode::BAD_REQUEST, Json(CSError::InvalidArchiveName)).into_response();
     };
 
     match File::open(archive_dir.join(format!("{}.csv", archive_name))).await {
@@ -550,10 +553,7 @@ async fn download_archive(
                 .unwrap()
                 .into_response()
         }
-        Err(_) => {
-            // 失败：返回 404 和普通文本
-            (StatusCode::NOT_FOUND, "Archive not found").into_response()
-        }
+        Err(_) => (StatusCode::NOT_FOUND, Json(CSError::ArchiveNotFound)).into_response(),
     }
 }
 

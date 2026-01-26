@@ -76,6 +76,10 @@ pub enum CSError {
     QueryDegree,
     #[error("saving room config failed")]
     SaveRoomConfig,
+    #[error("invalid archive name")]
+    InvalidArchiveName,
+    #[error("archive not found")]
+    ArchiveNotFound,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

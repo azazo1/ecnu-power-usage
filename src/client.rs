@@ -284,18 +284,7 @@ impl Client {
             .await?;
         match resp.status() {
             StatusCode::OK => Ok(Records::from_csv(Cursor::new(resp.text().await?)).await?),
-            status => Err(Error::CS(CSError::General(format!(
-                "{}{}",
-                status,
-                match resp.text().await? {
-                    s if s.is_empty() => {
-                        String::new()
-                    }
-                    s => {
-                        format!(": {}", s)
-                    }
-                }
-            )))),
+            _ => Err(Error::CS(resp.json().await?)),
         }
     }
 
@@ -421,7 +410,7 @@ impl GuardClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::client::Client;
+    use crate::{CSError, Error, client::Client};
 
     #[tokio::test]
     async fn list_archives() {
@@ -432,6 +421,9 @@ mod tests {
     #[tokio::test]
     async fn download_archive() {
         let client = Client::new("http://localhost:20531".parse().unwrap());
-        dbg!(client.download_archive("temp1").await).unwrap();
+        assert!(matches!(
+            client.download_archive("not-exists").await,
+            Err(Error::CS(CSError::ArchiveNotFound))
+        ));
     }
 }
