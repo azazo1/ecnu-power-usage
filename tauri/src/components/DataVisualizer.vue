@@ -5,11 +5,21 @@
         <div
             class="d-flex justify-content-between align-items-center p-4 border-bottom border-success border-opacity-25 bg-light bg-opacity-50">
             <div class="d-flex align-items-center gap-3">
-                <button v-if="isArchiveMode" @click="$emit('back')"
+                <button v-if="isArchiveMode" @click="$emit('archiveBack')"
                     class="btn btn-outline-success btn-sm rounded-3 d-flex align-items-center hover-scale border-2">
                     <i class="bi bi-arrow-left me-1"></i>
                 </button>
-                <h2 class="h4 mb-0 fw-bold text-success">{{ title }}</h2>
+
+                <h2 class="h4 mb-0 fw-bold text-success" :title="title">
+                    {{ title.length > 13 ? title.slice(0, 13) + '...' : title }}
+                </h2>
+
+                <button @click="$emit('refresh')"
+                    class="btn btn-outline-success btn-sm rounded-3 d-flex align-items-center justify-content-center hover-scale p-2"
+                    style="width: 38px; height: 38px;" title="刷新数据">
+                    <i class="bi bi-arrow-clockwise fs-5"></i>
+                </button>
+
                 <button v-if="archivePath" @click="openArchiveFile"
                     class="btn btn-outline-secondary btn-sm rounded-circle d-flex align-items-center justify-content-center hover-scale border-1 p-2"
                     style="width: 32px; height: 32px; --bs-btn-border-color: rgba(0,0,0,0.1);" title="在系统中打开文件">
@@ -221,7 +231,14 @@ const props = defineProps<{
     archivePath: string | null;
 }>();
 
-const emit = defineEmits<{ back: [], createArchive: [startTime: Date | null, endTime: Date | null, name: string | null] }>();
+const emit = defineEmits<{
+    /// 在 archive mode 下, 退回到 archives list.
+    archiveBack: [],
+    /// 在 archive / records mode 下, 刷新内容.
+    refresh: []
+    /// 在 records mode 下, 选择一段内容并创建 archive.
+    createArchive: [startTime: Date | null, endTime: Date | null, name: string | null]
+}>();
 
 // --- 视图切换逻辑 ---
 const viewMode = ref<"list" | "chart">("list");

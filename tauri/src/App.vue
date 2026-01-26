@@ -38,7 +38,7 @@
             <transition name="fade" mode="out-in">
                 <!-- Current Records View -->
                 <DataVisualizer v-if="currentTab === 'records'" title="📊 当前周期记录" :data="currentRecords"
-                    :archive-path="null" />
+                    @refresh="refreshRecords" @create-archive="handleCreateArchive" :archive-path="null" />
 
                 <!-- Archives List View -->
                 <div v-else-if="currentTab === 'archives' && !selectedArchive"
@@ -88,8 +88,8 @@
 
                 <!-- Archive Detail View -->
                 <DataVisualizer v-else-if="currentTab === 'archives' && selectedArchive" :title="selectedArchive"
-                    :data="selectedArchiveData.content" is-archive-mode @back="selectedArchive = null"
-                    :archive-path="selectedArchiveData.path" />
+                    :data="selectedArchiveData.content" is-archive-mode @archive-back="selectedArchive = null"
+                    @refresh="refreshSelectedArchive" :archive-path="selectedArchiveData.path" />
             </transition>
         </main>
     </div>
@@ -100,7 +100,7 @@ import { ref, onMounted } from "vue";
 import DataVisualizer from "./components/DataVisualizer.vue";
 import { getRecords, type ElectricityRecord } from "./utils/records";
 import { invoke } from "@tauri-apps/api/core";
-import { Archive, ArchiveMeta, downloadArchive, listArchives } from "./utils/archive";
+import { Archive, ArchiveMeta, createArchive, downloadArchive, listArchives } from "./utils/archive";
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
@@ -134,11 +134,17 @@ onMounted(async () => {
 
 async function refreshRecords() {
     currentRecords.value = await getRecords();
-};
+}
 
 async function refreshArchives() {
     archiveList.value = await listArchives();
-};
+}
+
+async function refreshSelectedArchive() {
+    if (selectedArchive.value != null) {
+        selectedArchiveData.value = await downloadArchive(selectedArchive.value);
+    }
+}
 
 async function openArchive(archiveName: string) {
     selectedArchiveData.value = await downloadArchive(archiveName);
@@ -147,6 +153,14 @@ async function openArchive(archiveName: string) {
 
 async function getCrateVersion(): Promise<string> {
     return await invoke("crate_version");
+}
+
+async function handleCreateArchive(startTime: Date | null, endTime: Date | null, name: string | null): Promise<void> {
+    let meta = await createArchive(startTime, endTime, name);
+    // todo 创建通知
+    console.log(meta);
+    await refreshRecords();
+    await refreshArchives();
 }
 </script>
 
