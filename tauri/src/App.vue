@@ -1,12 +1,36 @@
 <template>
     <div class="d-flex vh-100 bg-gradient"
         style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 50%, #a5d6a7 100%);">
+        <Transition name="toast-slide">
+            <div v-if="toast.show"
+                class="position-fixed top-0 start-50 translate-middle-x mt-4 z-3 shadow-lg rounded-pill bg-white border border-success border-opacity-25 px-4 py-2 d-flex align-items-center gap-2"
+                style="min-width: 300px; max-width: 90%;">
+                <i
+                    :class="['bi fs-5', toast.type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-danger']"></i>
+                <div class="d-flex flex-column flex-grow-1">
+                    <span class="fw-bold text-dark" style="font-size: 0.9rem;">{{ toast.title }}</span>
+                    <span v-if="toast.message" class="text-muted small">{{ toast.message }}</span>
+                </div>
+                <button @click="hideToast" class="btn btn-sm btn-link text-secondary p-0 ms-2">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </Transition>
+
         <!-- Sidebar -->
         <aside class="bg-white shadow-lg d-flex flex-column" style="width: 80px; min-width: 80px;">
-            <!-- Logo (todo 替换成图标, 添加悬停提示, 单击跳转 github)-->
-            <div class="p-4 d-flex justify-content-center align-items-center position-relative" data-bs-toggle="tooltip"
-                data-bs-placement="right" title="宿舍电量监控">
-                <span style="font-size: 2.5rem; cursor: pointer;" class="hover-scale">⚡</span>
+            <!-- Logo -->
+            <div class="p-4 d-flex justify-content-center align-items-center">
+                <button @click="openGithub"
+                    class="btn p-0 border-0 d-flex align-items-center justify-content-center hover-logo position-relative"
+                    data-bs-toggle="tooltip" data-bs-placement="right" title="宿舍电量监控">
+                    <div class="bg-success bg-gradient text-white rounded-circle shadow-sm d-flex align-items-center justify-content-center"
+                        style="width: 48px; height: 48px;">
+                        <i class="bi bi-lightning-charge-fill fs-3"></i>
+                    </div>
+                    <div class="position-absolute top-50 start-50 translate-middle bg-success rounded-circle opacity-25 pulse-ring"
+                        style="width: 60px; height: 60px; z-index: -1;"></div>
+                </button>
             </div>
 
             <!-- Navigation -->
@@ -101,6 +125,7 @@ import DataVisualizer from "./components/DataVisualizer.vue";
 import { getRecords, type ElectricityRecord } from "./utils/records";
 import { invoke } from "@tauri-apps/api/core";
 import { Archive, ArchiveMeta, createArchive, downloadArchive, listArchives } from "./utils/archive";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
@@ -155,12 +180,50 @@ async function getCrateVersion(): Promise<string> {
     return await invoke("crate_version");
 }
 
-async function handleCreateArchive(startTime: Date | null, endTime: Date | null, name: string | null): Promise<void> {
-    let meta = await createArchive(startTime, endTime, name);
-    // todo 创建通知
-    console.log(meta);
-    await refreshRecords();
-    await refreshArchives();
+async function handleCreateArchive(startTime: Date | null, endTime: Date | null, name: string | null) {
+    try {
+        let meta = await createArchive(startTime, endTime, name);
+        // 触发成功通知
+        showToast('归档创建成功', `已归档 ${meta.recordsNum} 条记录`);
+
+        await refreshRecords();
+        await refreshArchives();
+    } catch (error) {
+        console.error(error);
+        showToast('归档创建失败', `${error}\n请检查后端日志获取更详细内容`, 'error');
+    }
+}
+
+async function openGithub() {
+    try {
+        await openUrl('https://github.com/azazo1/ecnu-power-usage');
+        console.log("open github");
+    } catch (e) {
+        console.error('Failed to open URL', e);
+        showToast('打开链接失败', '请检查系统默认浏览器设置', 'error');
+    }
+}
+
+// --- Toast ---
+
+const toast = ref<{ show: boolean, title: string, message?: string, type: 'success' | 'error' }>({
+    show: false,
+    title: '',
+    type: 'success'
+});
+let toastTimer: number | null = null;
+
+function showToast(title: string, message: string = '', type: 'success' | 'error' = 'success', timeout: number = 3000) {
+    console.log("open toast", title);
+    if (toastTimer) clearTimeout(toastTimer);
+    toast.value = { show: true, title, message, type };
+    toastTimer = setTimeout(() => {
+        toast.value.show = false;
+    }, timeout);
+}
+
+function hideToast() {
+    toast.value.show = false;
 }
 </script>
 
