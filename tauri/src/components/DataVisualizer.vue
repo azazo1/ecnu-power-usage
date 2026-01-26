@@ -10,8 +10,8 @@
                     <i class="bi bi-arrow-left me-1"></i>
                 </button>
 
-                <h2 class="h4 mb-0 fw-bold text-success" :title="title">
-                    {{ title.length > 13 ? title.slice(0, 13) + '...' : title }}
+                <h2 class="h4 mb-0 fw-bold text-success">
+                    <slot name="title">记录</slot>
                 </h2>
 
                 <button @click="$emit('refresh')"
@@ -225,7 +225,6 @@ use([
 
 const props = defineProps<{
     data: ElectricityRecord[];
-    title: string;
     isArchiveMode?: boolean;
     /// archive path
     archivePath: string | null;

@@ -67,17 +67,23 @@
         <main class="flex-grow-1 p-4 h-100 overflow-hidden">
             <transition name="fade" mode="out-in">
                 <!-- Current Records View -->
-                <DataVisualizer v-if="currentTab === 'records'" title="📊 当前周期记录" :data="currentRecords"
-                    @refresh="refreshRecords" @create-archive="handleCreateArchive" :archive-path="null" />
+                <DataVisualizer v-if="currentTab === 'records'" @refresh="refreshRecords" :data="currentRecords"
+                    @create-archive="handleCreateArchive" :archive-path="null">
+                    <template #title><i class="bi bi-journal-text me-2"></i> 当前周期记录</template>
+                </DataVisualizer>
 
                 <!-- Archives List View -->
                 <ArchiveList v-else-if="currentTab === 'archives' && !selectedArchive" :archive-list="archiveList"
                     @open="openArchive" @refresh="refreshSelectedArchive" />
 
                 <!-- Archive Detail View -->
-                <DataVisualizer v-else-if="currentTab === 'archives' && selectedArchive" :title="selectedArchive"
+                <DataVisualizer v-else-if="currentTab === 'archives' && selectedArchive"
                     :data="selectedArchiveData.content" is-archive-mode @archive-back="selectedArchive = null"
-                    @refresh="refreshSelectedArchive" :archive-path="selectedArchiveData.path" />
+                    @refresh="refreshSelectedArchive" :archive-path="selectedArchiveData.path">
+                    <template #title>
+                        {{ selectedArchive.length > 13 ? selectedArchive.slice(0, 13) + '...' : selectedArchive }}
+                    </template>
+                </DataVisualizer>
             </transition>
         </main>
     </div>
