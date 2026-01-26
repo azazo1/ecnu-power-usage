@@ -319,6 +319,16 @@ impl Client {
     pub fn set_server_base(&mut self, server_base: Url) {
         self.server_base = server_base;
     }
+
+    // 启用自签名 tls 证书
+    pub fn configure_tls(&mut self, client_cert: String, client_key: String, root_ca: String) {
+        todo!()
+    }
+
+    // 关闭 tls
+    pub fn deconfigure_tls(&mut self) {
+        todo!()
+    }
 }
 
 pub struct GuardClient {

@@ -1,14 +1,10 @@
-#![allow(dead_code)]
-use std::{
-    ops::{Deref, DerefMut},
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 use ecnu_power_usage::client::Client;
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime::RwLock, Url};
+use tauri::{Url, async_runtime::RwLock};
 use tokio::{fs, io};
-use tracing::{info, warn};
+use tracing::info;
 
 pub(crate) async fn log_dir() -> crate::Result<PathBuf> {
     let default = shellexpand::tilde("~/.local/share");
@@ -39,8 +35,22 @@ pub(crate) async fn config_dir() -> io::Result<PathBuf> {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct GuiConfig {
+    #[serde(default = "default_server_base")]
     server_base: Url,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_cert: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "rootCA")]
+    root_ca: Option<String>,
+    #[serde(default)]
+    use_self_signed_tls: bool,
+}
+
+fn default_server_base() -> Url {
+    "https://localhost:20531".parse().unwrap()
 }
 
 impl GuiConfig {
@@ -55,54 +65,6 @@ impl GuiConfig {
     pub(crate) async fn save_config(&self) -> crate::Result<()> {
         let config_path = config_dir().await?.join(CONFIG_FILENAME);
         Ok(fs::write(config_path, toml::to_string_pretty(self)?.as_bytes()).await?)
-    }
-
-    fn set_server_base(&mut self, server_base: Url) -> ConfigSync<'_> {
-        self.server_base = server_base;
-        ConfigSync::new(self)
-    }
-}
-
-/// 延迟, 将配置统一地写入到文件当中.
-struct ConfigSync<'a> {
-    config: &'a mut GuiConfig,
-    sync: bool,
-}
-
-impl<'a> ConfigSync<'a> {
-    fn new(config: &'a mut GuiConfig) -> Self {
-        Self {
-            config,
-            sync: false,
-        }
-    }
-
-    async fn sync_to_file(mut self) -> crate::Result<()> {
-        self.config.save_config().await?;
-        self.sync = true;
-        Ok(())
-    }
-}
-
-impl<'a> Deref for ConfigSync<'a> {
-    type Target = GuiConfig;
-
-    fn deref(&self) -> &Self::Target {
-        self.config
-    }
-}
-
-impl<'a> DerefMut for ConfigSync<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.config
-    }
-}
-
-impl<'a> Drop for ConfigSync<'a> {
-    fn drop(&mut self) {
-        if !self.sync {
-            warn!("ConfigSycn was dropped before sync.");
-        }
     }
 }
 
@@ -120,24 +82,24 @@ impl AppState {
         })
     }
 
-    pub(crate) async fn set_server_base(&self, server_base: Url) -> crate::Result<()> {
-        self.client
-            .write()
-            .await
-            .set_server_base(server_base.clone());
-        self.config
-            .write()
-            .await
-            .set_server_base(server_base)
-            .sync_to_file()
-            .await?;
-        Ok(())
-    }
-
     pub(crate) async fn set_config(&self, new_config: GuiConfig) -> crate::Result<()> {
         let mut config = self.config.write().await;
-        *config = new_config;
-        config.save_config().await
+        *config = new_config.clone();
+        config.save_config().await?;
+        drop(config);
+
+        let mut client = self.client.write().await;
+        client.set_server_base(new_config.server_base);
+        if new_config.use_self_signed_tls
+            && let Some(client_cert) = new_config.client_cert
+            && let Some(client_key) = new_config.client_key
+            && let Some(root_ca) = new_config.root_ca
+        {
+            client.configure_tls(client_cert, client_key, root_ca);
+        } else {
+            client.deconfigure_tls();
+        }
+        Ok(())
     }
 }
 

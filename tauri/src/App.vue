@@ -55,6 +55,16 @@
                 </button>
             </nav>
 
+            <div class="border-top border-light my-2 mx-2"></div>
+
+            <!-- 配置按钮 -->
+            <button @click="showConfigModal = true"
+                class="btn-gear d-flex align-items-center justify-content-center border-0 shadow-sm transition-all"
+                :class="{ 'btn-gear-active': showConfigModal }" data-bs-toggle="tooltip" data-bs-placement="right"
+                title="系统设置">
+                <i class="bi bi-gear-fill fs-4"></i>
+            </button>
+
             <!-- Version Info (todo: get version from backend)-->
             <div class="p-3 text-center text-muted small cursor-pointer hover-opacity-100"
                 @click="openUrl('https://github.com/azazo1/ecnu-power-usage/releases')" data-bs-toggle="tooltip"
@@ -87,8 +97,11 @@
             </transition>
         </main>
 
-        <HealthModal :show="currentHealth.kind !== 'Ok'" :health-status="currentHealth" @retry="manualHealthCheck"
+        <ConfigModal :show="showConfigModal" @close="showConfigModal = false" @save="handleConfigSave"
             @error="notifyError" />
+
+        <HealthModal :show="currentHealth.kind !== 'Ok'" :health-status="currentHealth" @retry="manualHealthCheck"
+            @error="notifyError" @open-config="showConfigModal = true" />
     </div>
 </template>
 
@@ -102,6 +115,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import ArchiveList from "./components/ArchiveList.vue";
 import HealthModal from "./components/HealthModal.vue";
 import { healthCheck, HealthStatus } from "./utils/health";
+import ConfigModal from "./components/ConfigModal.vue";
+import { GuiConfig } from "./utils/config";
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
@@ -169,8 +184,8 @@ async function handleCreateArchive(startTime: Date | null, endTime: Date | null,
         // 触发成功通知
         notifySuccess('归档创建成功', `已归档 ${meta.recordsNum} 条记录`);
 
-        await refreshRecords();
-        await refreshArchives();
+        refreshRecords();
+        refreshArchives();
     } catch (error) {
         console.error(error);
         notifyError('归档创建失败', `${error}\n请检查后端日志获取更详细内容`);
@@ -258,7 +273,7 @@ async function manualHealthCheck() {
     if (currentHealth.value.kind !== 'Ok') {
         notifyError("状态异常", "请检查相关设置或网络。");
     } else {
-        notifySuccess("连接恢复", "状态已正常。");
+        notifySuccess("连接成功", "状态正常。");
     }
 }
 
@@ -267,6 +282,16 @@ onUnmounted(() => {
         clearInterval(healthCheckTimer);
     }
 });
+
+// --- Config ---
+
+const showConfigModal = ref(false);
+
+function handleConfigSave(_config: GuiConfig) {
+    notifySuccess('设置已保存', '配置更新成功，正在重试连接...');
+    // 保存后立即尝试重连，给用户即时反馈
+    manualHealthCheck();
+}
 </script>
 
 <style scoped>
@@ -400,6 +425,72 @@ onUnmounted(() => {
 
     100% {
         transform: translate(-50%, -50%) scale(0.95);
+        opacity: 0;
+    }
+}
+
+/* 齿轮按钮基础样式 */
+.btn-gear {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    /* 强制圆形 */
+    background-color: #ffffff;
+    color: #9e9e9e;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    margin: 0 auto;
+    /* 侧边栏居中 */
+}
+
+/* 激活状态 (Modal 打开时) */
+.btn-gear-active {
+    background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(67, 160, 71, 0.4);
+    transform: rotate(90deg);
+    /* 激活时旋转 90 度 */
+}
+
+/* 悬停效果：旋转 + 绿色背光 */
+.btn-gear:hover {
+    color: #43a047;
+    background-color: #f1f8e9;
+    transform: scale(1.1) rotate(45deg);
+    /* 悬停时轻微旋转 */
+    box-shadow: 0 0 15px rgba(67, 160, 71, 0.2);
+}
+
+/* 内部图标旋转动画 */
+.btn-gear:hover i {
+    filter: drop-shadow(0 0 2px rgba(67, 160, 71, 0.3));
+}
+
+/* 点击反馈 */
+.btn-gear:active {
+    transform: scale(0.9) rotate(0deg);
+    transition: all 0.1s;
+}
+
+/* 更有“设置”感，加一个微小的呼吸灯 */
+.btn-gear-active::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 2px solid #66bb6a;
+    animation: gear-pulse 2s infinite;
+}
+
+@keyframes gear-pulse {
+    0% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+
+    100% {
+        transform: scale(1.4);
         opacity: 0;
     }
 }

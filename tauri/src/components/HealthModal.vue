@@ -4,7 +4,14 @@
             class="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center z-modal"
             style="background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(5px);">
 
-            <div class="card border-0 shadow-lg rounded-4 overflow-hidden animate-pop" style="width: 380px;">
+            <div class="card border-0 shadow-lg rounded-4 overflow-hidden animate-pop position-relative"
+                style="width: 380px;">
+                <button @click="$emit('openConfig')"
+                    class="btn btn-light position-absolute top-0 end-0 m-3 rounded-circle shadow-sm d-flex align-items-center justify-content-center hover-lift"
+                    style="width: 32px; height: 32px; z-index: 10;" title="打开设置">
+                    <i class="bi bi-gear-fill text-secondary small"></i>
+                </button>
+
                 <div class="h-1 w-100" :class="statusConfig.bgClass"></div>
 
                 <div class="card-body p-4 text-center d-flex flex-column align-items-center gap-3">
@@ -55,11 +62,12 @@ import { HealthStatus } from '../utils/health';
 
 const props = defineProps<{
     show: boolean;
-    healthStatus: HealthStatus
+    healthStatus: HealthStatus,
 }>();
 
 const emit = defineEmits<{
     retry: []
+    openConfig: []
     error: [string, string]
 }>();
 

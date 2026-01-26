@@ -34,14 +34,19 @@ mod commands {
     }
 
     #[tauri::command]
-    pub(crate) async fn configure(
+    pub(crate) async fn update_config(
         app_state: State<'_, AppState>,
-        new_config: GuiConfig,
+        config: GuiConfig,
     ) -> Result<(), String> {
         app_state
-            .set_config(new_config)
+            .set_config(config)
             .await
             .map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub(crate) async fn get_config(app_state: State<'_, AppState>) -> Result<GuiConfig, String> {
+        Ok(app_state.config.read().await.clone())
     }
 
     #[tauri::command]
@@ -206,7 +211,8 @@ pub async fn run() -> anyhow::Result<()> {
         .manage(BrowserConfig::builder().with_head().build().unwrap())
         .invoke_handler(tauri::generate_handler![
             crate_version,
-            configure,
+            update_config,
+            get_config,
             get_records,
             pick_room,
             login,
