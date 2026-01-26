@@ -21,7 +21,7 @@
         <aside class="bg-white shadow-lg d-flex flex-column" style="width: 80px; min-width: 80px;">
             <!-- Logo -->
             <div class="p-4 d-flex justify-content-center align-items-center">
-                <button @click="openGithub"
+                <button @click="openUrl('https://github.com/azazo1/ecnu-power-usage')"
                     class="btn p-0 border-0 d-flex align-items-center justify-content-center hover-logo position-relative"
                     data-bs-toggle="tooltip" data-bs-placement="right" title="宿舍电量监控">
                     <div class="bg-success bg-gradient text-white rounded-circle shadow-sm d-flex align-items-center justify-content-center"
@@ -51,8 +51,9 @@
             </nav>
 
             <!-- Version Info (todo: get version from backend)-->
-            <div class="p-3 text-center text-muted small" data-bs-toggle="tooltip" data-bs-placement="right"
-                :title="'版本 v' + crateVersion">
+            <div class="p-3 text-center text-muted small cursor-pointer hover-opacity-100"
+                @click="openUrl('https://github.com/azazo1/ecnu-power-usage/releases')" data-bs-toggle="tooltip"
+                data-bs-placement="right" :title="'查看更新日志 v' + crateVersion">
                 <span style="opacity: 0.6;">v{{ crateVersion }}</span>
             </div>
         </aside>
@@ -191,16 +192,6 @@ async function handleCreateArchive(startTime: Date | null, endTime: Date | null,
     } catch (error) {
         console.error(error);
         showToast('归档创建失败', `${error}\n请检查后端日志获取更详细内容`, 'error');
-    }
-}
-
-async function openGithub() {
-    try {
-        await openUrl('https://github.com/azazo1/ecnu-power-usage');
-        console.log("open github");
-    } catch (e) {
-        console.error('Failed to open URL', e);
-        showToast('打开链接失败', '请检查系统默认浏览器设置', 'error');
     }
 }
 
