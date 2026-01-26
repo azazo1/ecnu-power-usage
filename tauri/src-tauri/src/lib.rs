@@ -11,20 +11,21 @@ use error::Result;
 
 use commands::*;
 
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod commands {
     use std::path::PathBuf;
 
     use chromiumoxide::BrowserConfig;
     use chrono::{DateTime, FixedOffset};
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    use ecnu_power_usage::{client::BrowserExecutor, ArchiveMeta, CSError, Records, TimeSpan};
+    use ecnu_power_usage::{ArchiveMeta, CSError, Records, TimeSpan, client::BrowserExecutor};
     use serde::Serialize;
     use tauri::State;
-    use tokio::fs;
-    use tracing::error;
+    use tauri_plugin_dialog::DialogExt;
+    use tokio::{fs, sync::oneshot};
+    use tracing::{error, info};
 
     use crate::{
-        config::{self, AppState, GuiConfig, ARCHIVE_CACHE_DIRNAME},
+        config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig},
         online,
     };
 
@@ -197,6 +198,38 @@ mod commands {
             .await
             .map_err(|e| format!("failed to create archive: {e:?}"))
     }
+
+    /// 选择一个文本证书/密钥文件并读取其内容, 仅支持小文件.
+    #[tauri::command]
+    pub(crate) async fn pick_and_read_cert(app: tauri::AppHandle) -> Result<String, String> {
+        let (tx, rx) = oneshot::channel();
+        app.dialog()
+            .file()
+            .add_filter("Certificate/Key", &["pem", "crt", "key", "txt"])
+            .pick_file(move |fp| {
+                info!("file picked: {fp:?}");
+                if let Err(e) = tx.send(fp) {
+                    error!("picking file: {e:?}");
+                }
+            });
+
+        if let Ok(Some(path)) = rx.await {
+            let path = path
+                .into_path()
+                .map_err(|e| format!("path convert failed: {e:?}"))?;
+            let meta = fs::metadata(&path)
+                .await
+                .map_err(|e| format!("get file meta failed: {e:?}"))?;
+            if meta.len() > 1024 * 50 {
+                return Err("file is too large".to_string());
+            }
+            fs::read_to_string(&path)
+                .await
+                .map_err(|e| format!("reading failed: {e:?}"))
+        } else {
+            Err("cancelled".into())
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -207,6 +240,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::load().await?)
         .manage(BrowserConfig::builder().with_head().build().unwrap())
         .invoke_handler(tauri::generate_handler![
@@ -220,7 +254,8 @@ pub async fn run() -> anyhow::Result<()> {
             list_archives,
             get_degree,
             health_check,
-            create_archive
+            create_archive,
+            pick_and_read_cert
         ])
         .run(tauri::generate_context!())
         .with_context(|| "error launch tauri app")?;

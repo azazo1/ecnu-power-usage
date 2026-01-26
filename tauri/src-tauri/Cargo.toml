@@ -35,3 +35,4 @@ tracing-appender = "0.2.4"
 chromiumoxide = "0.8.0"
 chrono = { version = "0.4.43", features = ["serde"] }
 reqwest = "0.13.1"
+tauri-plugin-dialog = "2.6.0"

@@ -53,69 +53,89 @@
                                 <div
                                     class="d-flex flex-column gap-3 mt-3 pt-3 border-top border-secondary border-opacity-10">
                                     <div>
-                                        <label class="form-label x-small fw-bold text-muted mb-1">客户端证书</label>
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <label class="form-label x-small fw-bold text-muted mb-0">客户端证书</label>
+                                            <button type="button" @click="importFromFile('clientCert')"
+                                                class="btn btn-link p-0 x-small text-success text-decoration-none">
+                                                <i class="bi bi-file-earmark-arrow-up"></i> 导入
+                                            </button>
+                                        </div>
                                         <textarea v-model="config.clientCert"
                                             class="form-control form-control-sm font-monospace x-small bg-white"
                                             rows="3"></textarea>
-                                    </div>
-                                    <div>
-                                        <label class="form-label x-small fw-bold text-muted mb-1">客户端私钥</label>
-                                        <textarea v-model="config.clientKey"
-                                            class="form-control form-control-sm font-monospace x-small bg-white"
-                                            rows="3"></textarea>
-                                    </div>
-                                    <div>
-                                        <label class="form-label x-small fw-bold text-muted mb-1">根证书</label>
-                                        <textarea v-model="config.rootCA"
-                                            class="form-control form-control-sm font-monospace x-small bg-white"
-                                            rows="3"></textarea>
-                                    </div>
                                 </div>
-                                <div class="mt-3 pt-3 border-top border-secondary border-opacity-10">
-                                    <div class="form-check form-switch d-flex align-items-center gap-2">
-                                        <input class="form-check-input cursor-pointer" type="checkbox" role="switch"
-                                            id="useSelfSignedTls" v-model="config.useSelfSignedTls"
-                                            style="width: 2.5em; height: 1.25em;">
-                                        <label class="form-check-label small fw-bold text-secondary cursor-pointer"
-                                            for="useSelfSignedTls">
-                                            启用客户端证书验证 (mTLS)
-                                        </label>
-                                    </div>
 
-                                    <div class="mt-2 p-2 rounded-3"
-                                        :class="isTlsReady ? 'bg-success bg-opacity-10 text-success' : 'bg-warning bg-opacity-10 text-warning'"
-                                        style="font-size: 0.7rem;">
-                                        <i class="bi"
-                                            :class="isTlsReady ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'"></i>
-                                        <span class="ms-1">
-                                            提示：只有在开启按钮且设置前三个属性都不为空时，该配置才会生效。
-                                            <strong v-if="config.useSelfSignedTls && !isTlsReady">(当前证书不完整)</strong>
-                                        </span>
+                                <div>
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <label class="form-label x-small fw-bold text-muted mb-0">客户端私钥</label>
+                                        <button type="button" @click="importFromFile('clientKey')"
+                                            class="btn btn-link p-0 x-small text-success text-decoration-none">
+                                            <i class="bi bi-file-earmark-arrow-up"></i> 导入
+                                        </button>
                                     </div>
+                                    <textarea v-model="config.clientKey"
+                                        class="form-control form-control-sm font-monospace x-small bg-white"
+                                        rows="3"></textarea>
+                                </div>
+
+                                <div>
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <label class="form-label x-small fw-bold text-muted mb-0">根证书</label>
+                                        <button type="button" @click="importFromFile('rootCA')"
+                                            class="btn btn-link p-0 x-small text-success text-decoration-none">
+                                            <i class="bi bi-file-earmark-arrow-up"></i> 导入
+                                        </button>
+                                    </div>
+                                    <textarea v-model="config.rootCA"
+                                        class="form-control form-control-sm font-monospace x-small bg-white"
+                                        rows="3"></textarea>
+                                </div>
+                            </div>
+                            <div class="mt-3 pt-3 border-top border-secondary border-opacity-10">
+                                <div class="form-check form-switch d-flex align-items-center gap-2">
+                                    <input class="form-check-input cursor-pointer" type="checkbox" role="switch"
+                                        id="useSelfSignedTls" v-model="config.useSelfSignedTls"
+                                        style="width: 2.5em; height: 1.25em;">
+                                    <label class="form-check-label small fw-bold text-secondary cursor-pointer"
+                                        for="useSelfSignedTls">
+                                        启用客户端证书验证 (mTLS)
+                                    </label>
+                                </div>
+
+                                <div class="mt-2 p-2 rounded-3"
+                                    :class="isTlsReady ? 'bg-success bg-opacity-10 text-success' : 'bg-warning bg-opacity-10 text-warning'"
+                                    style="font-size: 0.7rem;">
+                                    <i class="bi"
+                                        :class="isTlsReady ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'"></i>
+                                    <span class="ms-1">
+                                        提示：只有在开启按钮且设置前三个属性都不为空时，该配置才会生效。
+                                        <strong v-if="config.useSelfSignedTls && !isTlsReady">(当前证书不完整)</strong>
+                                    </span>
                                 </div>
                             </div>
                         </div>
-                    </form>
                 </div>
-
-                <div class="card-footer bg-white border-top border-light p-3 d-flex gap-2 justify-content-end">
-                    <button type="button" @click="$emit('close')"
-                        class="btn btn-light text-secondary rounded-pill px-4 fw-bold small hover-scale">取消</button>
-                    <button @click="saveConfig" :disabled="loading"
-                        class="btn btn-success rounded-pill px-4 d-flex align-items-center gap-2 fw-bold small hover-scale shadow-sm">
-                        <span v-if="loading" class="spinner-border spinner-border-sm" role="status"
-                            aria-hidden="true"></span>
-                        保存并应用
-                    </button>
-                </div>
+                </form>
             </div>
+
+            <div class="card-footer bg-white border-top border-light p-3 d-flex gap-2 justify-content-end">
+                <button type="button" @click="$emit('close')"
+                    class="btn btn-light text-secondary rounded-pill px-4 fw-bold small hover-scale">取消</button>
+                <button @click="saveConfig" :disabled="loading"
+                    class="btn btn-success rounded-pill px-4 d-flex align-items-center gap-2 fw-bold small hover-scale shadow-sm">
+                    <span v-if="loading" class="spinner-border spinner-border-sm" role="status"
+                        aria-hidden="true"></span>
+                    保存并应用
+                </button>
+            </div>
+        </div>
         </div>
     </Transition>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { getConfigCmd, GuiConfig, updateConfigCmd as saveConfigCmd } from '../utils/config';
+import { getConfigCmd, GuiConfig, pickCertCmd, updateConfigCmd as saveConfigCmd } from '../utils/config';
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits<{
@@ -172,6 +192,18 @@ async function saveConfig() {
         emit('error', '保存配置失败', String(e));
     } finally {
         loading.value = false;
+    }
+}
+
+async function importFromFile(field: 'clientCert' | 'clientKey' | 'rootCA') {
+    try {
+        const content = await pickCertCmd();
+        config.value[field] = content;
+    } catch (e) {
+        if (e !== 'cancelled') {
+            console.error(e);
+            emit('error', '读取文件失败', String(e));
+        }
     }
 }
 </script>
@@ -258,5 +290,15 @@ async function saveConfig() {
 .text-success,
 .text-warning {
     transition: color 0.3s ease;
+}
+
+.btn-link.x-small {
+    font-size: 0.7rem;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.btn-link.x-small:hover {
+    opacity: 1;
 }
 </style>

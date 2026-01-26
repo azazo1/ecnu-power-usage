@@ -96,7 +96,7 @@ const statusConfig = computed(() => {
         case 'ServerDown':
             return {
                 title: '服务器无响应',
-                desc: '学校电费查询系统似乎暂时无法访问，请稍后再试。',
+                desc: '电费查询后端似乎暂时无法访问，请稍后再试。',
                 icon: 'bi-hdd-network',
                 bgClass: 'bg-danger',
                 textClass: 'text-danger',
