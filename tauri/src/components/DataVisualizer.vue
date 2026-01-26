@@ -133,22 +133,20 @@
                         style="height: 24px;" @click="extendToStart" title="选中从开头到当前">
                         <i class="bi bi-skip-backward-fill"></i>
                     </button>
-                    <button
-                        class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
-                        style="height: 24px;" @click="extendToEnd" title="选中从当前到末尾">
-                        <i class="bi bi-skip-forward-fill"></i>
-                    </button>
-                </div>
 
-                <div class="d-flex gap-2 pt-2 border-top border-success border-opacity-10">
                     <button
                         class="btn btn-sm btn-success flex-grow-1 py-1 d-flex justify-content-center align-items-center gap-1"
                         style="height: 24px; font-size: 0.75rem;" @click="handleArchiveClick">
                         <i class="bi bi-archive"></i>
                         <span>归档选中项</span>
                     </button>
-                </div>
 
+                    <button
+                        class="btn btn-sm btn-outline-success border-0 bg-success bg-opacity-10 flex-grow-1 py-0 d-flex justify-content-center align-items-center"
+                        style="height: 24px;" @click="extendToEnd" title="选中从当前到末尾">
+                        <i class="bi bi-skip-forward-fill"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- 创建归档 对话框 -->
