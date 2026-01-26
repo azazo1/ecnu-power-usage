@@ -151,7 +151,6 @@ onMounted(async () => {
     crateVersion.value = await getCrateVersion()
 })
 
-// todo records 刷新按钮
 // 加载 Records
 onMounted(async () => {
     await refreshRecords();
