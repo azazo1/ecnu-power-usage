@@ -134,7 +134,7 @@
                         <i class="bi bi-skip-backward-fill"></i>
                     </button>
 
-                    <button
+                    <button v-if="!isArchiveMode"
                         class="btn btn-sm btn-success flex-grow-1 py-1 d-flex justify-content-center align-items-center gap-1"
                         style="height: 24px; font-size: 0.75rem;" @click="handleArchiveClick">
                         <i class="bi bi-archive"></i>
@@ -232,15 +232,6 @@ const formatTime = (d: Date) => format(d, "yyyy-MM-dd HH:mm:ss");
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
 
-const correctifyBoundary = () => {
-    if (selectionEnd.value === null || selectionStart.value === null) return;
-    if (selectionEnd.value < selectionStart.value) {
-        let tmp = selectionStart.value;
-        selectionStart.value = selectionEnd.value;
-        selectionEnd.value = tmp;
-    }
-}
-
 // 左键点击：设置起点
 const setStartPoint = (index: number) => {
     selectionStart.value = index;
@@ -249,8 +240,9 @@ const setStartPoint = (index: number) => {
     // 如果已有终点，则只更新起点，实现范围调整
     if (selectionEnd.value === null) {
         selectionEnd.value = index;
+    } else if (selectionEnd.value < selectionStart.value) {
+        selectionEnd.value = index;
     }
-    correctifyBoundary();
 };
 
 // 右键点击：设置终点
@@ -259,8 +251,9 @@ const setEndPoint = (index: number) => {
     // 同理，如果还没有起点，把起点也设为这个点
     if (selectionStart.value === null) {
         selectionStart.value = index;
+    } else if (selectionStart.value > selectionEnd.value) {
+        selectionStart.value = index;
     }
-    correctifyBoundary();
 };
 
 const clearSelection = () => {
