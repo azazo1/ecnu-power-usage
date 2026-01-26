@@ -28,10 +28,14 @@
                                     <p class="card-text small text-success mb-0">{{
                                         timeFormatter.format(arc.startTime) }}
                                         - {{ timeFormatter.format(arc.endTime) }}</p>
+                                    <span
+                                        class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-3">
+                                        <i class="bi bi-layers-half me-1"></i>
+                                        {{ arc.recordsNum }} 条记录
+                                    </span>
                                 </div>
                             </div>
-                            <div
-                                class="mt-auto d-flex align-items-center justify-content-end text-success fw-semibold small">
+                            <div class="position-absolute bottom-0 end-0 m-3 text-success fw-semibold small">
                                 <span class="me-1">查看详情</span>
                                 <i class="bi bi-arrow-right"></i>
                             </div>
