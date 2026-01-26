@@ -36,7 +36,7 @@ export function fromRawRecords(records: RawRecord[]): ElectricityRecord[] {
         let timestampNext = timestamps[i < records.length - 1 ? i + 1 : records.length - 1];
         const hoursDiff =
             Math.abs(differenceInSeconds(timestampNext, timestampPrev)) / 3600;
-        const kwhDiff = Math.abs(next[1] - prev[1]);
+        const kwhDiff = -Math.min(next[1] - prev[1], 0);
         let speed = 0;
         if (hoursDiff > 0) {
             speed = kwhDiff / hoursDiff;
