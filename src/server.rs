@@ -176,6 +176,7 @@ where
     }
 }
 
+/// 在 Recorder<File> 运行时修改对应的 csv 文件可能会破坏结果/无法及时得到响应.
 impl Recorder<File> {
     /// 从可读可写文件中加载.
     async fn load_from_rw_file(mut file: File) -> Result<Recorder<File>> {
@@ -298,6 +299,7 @@ async fn post_cookies(
 }
 
 async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<Records>>) {
+    debug!("get records request.");
     match state.recorder.write().await.read_records().await {
         Ok(records) => (StatusCode::OK, Json(Ok(records))),
         Err(e) => {
