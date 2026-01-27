@@ -66,6 +66,8 @@ bun run tauri build
 
 客户端第一次启动正常情况下因为没有进行配置, 无法连接到服务端, 点击弹窗右上角的设置按钮设置服务端的地址和 TLS 证书及密钥 (见 [证书生成](#证书生成)).
 
+![打开设置](assets/open-settings.png)
+
 ## 证书生成
 
 使用 `ecnu_power_usage_cert_tool` 工具可以快速生成可用的自签名证书, CS 证书和密钥.
