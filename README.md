@@ -64,6 +64,7 @@ ecnu_power_usage_sign_cert sign --root root_ca --age 10y --client --out client
 ```
 
 - 证书生成方法不唯一, 也可以使用 `openssl` 自行生成.
+- 注意生成服务端证书的时候 SAN / IP-SAN 至少需要指定一个, 不然可能无法成功建立 mTLS 链接.
 
 当前目录下生成的 `server.key`, `server.crt`, `client.key`, `client.crt` 以及 `root_ca.crt` 就是配置中对应的证书和密钥文件.
 

@@ -69,7 +69,7 @@ pub enum Commands {
         client: bool,
 
         /// 密钥算法
-        #[arg(short, long, value_enum, default_value_t = KeyAlgorithm::Ed25519)]
+        #[arg(long, value_enum, default_value_t = KeyAlgorithm::Ed25519)]
         algo: KeyAlgorithm,
     },
 }
