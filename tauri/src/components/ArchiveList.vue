@@ -74,9 +74,9 @@
 <script setup lang="ts">
 import { ArchiveMeta } from '../utils/archive';
 
-const props = defineProps<{ archiveList: ArchiveMeta[] }>();
+defineProps<{ archiveList: ArchiveMeta[] }>();
 
-const emit = defineEmits<{
+defineEmits<{
     // 刷新 archive 列表
     refresh: [],
     // 打开 archive

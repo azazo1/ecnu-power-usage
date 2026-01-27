@@ -10,6 +10,16 @@ pub(crate) enum Error {
     TomlSer(#[from] toml::ser::Error),
     #[error("initializing rolling file appender: {0}")]
     Log(#[from] tracing_appender::rolling::InitError),
+    #[error(transparent)]
+    Lib(#[from] ecnu_power_usage::Error),
+    #[error("invalid path, not utf-8")]
+    InvalidPath,
+    #[error("certificate file is too large")]
+    CertFileTooLarge,
+    #[error("certificate path is not file")]
+    CertNotFile,
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;

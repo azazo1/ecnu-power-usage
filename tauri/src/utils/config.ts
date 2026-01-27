@@ -17,5 +17,5 @@ export async function getConfigCmd(): Promise<GuiConfig> {
 }
 
 export async function pickCertCmd(): Promise<string> {
-    return await invoke<string>("pick_and_read_cert");
+    return await invoke<string>("pick_cert");
 }

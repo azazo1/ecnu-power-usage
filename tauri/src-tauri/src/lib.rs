@@ -7,7 +7,7 @@ mod online;
 
 use chromiumoxide::BrowserConfig;
 use config::AppState;
-use error::Result;
+use error::{Error, Result};
 
 use commands::*;
 
@@ -153,7 +153,7 @@ mod commands {
 
     #[derive(Serialize)]
     #[serde(rename_all = "PascalCase")]
-    pub enum HealthStatus {
+    pub(crate) enum HealthStatus {
         Ok,
         NoRoom,
         NotLogin,
@@ -196,12 +196,15 @@ mod commands {
             .await
             .create_archive(name, TimeSpan::new(start_time, end_time))
             .await
-            .map_err(|e| format!("failed to create archive: {e:?}"))
+            .map_err(|e| {
+                error!("create archive: {e:?}");
+                "failed to create archive.".to_string()
+            })
     }
 
-    /// 选择一个文本证书/密钥文件并读取其内容, 仅支持小文件.
+    /// 选择一个文本证书/密钥文件路径.
     #[tauri::command]
-    pub(crate) async fn pick_and_read_cert(app: tauri::AppHandle) -> Result<String, String> {
+    pub(crate) async fn pick_cert(app: tauri::AppHandle) -> Result<String, String> {
         let (tx, rx) = oneshot::channel();
         app.dialog()
             .file()
@@ -214,18 +217,13 @@ mod commands {
             });
 
         if let Ok(Some(path)) = rx.await {
-            let path = path
-                .into_path()
-                .map_err(|e| format!("path convert failed: {e:?}"))?;
-            let meta = fs::metadata(&path)
-                .await
-                .map_err(|e| format!("get file meta failed: {e:?}"))?;
-            if meta.len() > 1024 * 50 {
-                return Err("file is too large".to_string());
-            }
-            fs::read_to_string(&path)
-                .await
-                .map_err(|e| format!("reading failed: {e:?}"))
+            let path = path.into_path().map_err(|e| {
+                error!("picked path convert: {e:?}");
+                "path convert failed.".to_string()
+            })?;
+            path.to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| "invalid utf-8 path".to_string())
         } else {
             Err("cancelled".into())
         }
@@ -255,7 +253,7 @@ pub async fn run() -> anyhow::Result<()> {
             get_degree,
             health_check,
             create_archive,
-            pick_and_read_cert
+            pick_cert
         ])
         .run(tauri::generate_context!())
         .with_context(|| "error launch tauri app")?;
