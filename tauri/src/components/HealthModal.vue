@@ -22,7 +22,8 @@
 
                     <div>
                         <h4 class="fw-bold text-dark mb-2">{{ statusConfig.title }}</h4>
-                        <p class="text-muted small mb-0 px-2">{{ statusConfig.desc }}</p>
+                        <p class="text-muted small mb-0 px-2 text-start" style="white-space: pre-line;">{{
+                            statusConfig.desc }}</p>
                         <p v-if="healthStatus.message"
                             class="text-secondary x-small mt-2 font-monospace bg-light rounded p-1">{{
                                 healthStatus.message }}</p>
@@ -119,6 +120,19 @@ const statusConfig = computed(() => {
                 bgClass: 'bg-primary',
                 textClass: 'text-primary',
                 iconBgClass: 'bg-primary bg-opacity-10'
+            };
+        case 'TlsError':
+            return {
+                title: 'TLS 安全连接失败',
+                desc: '由于安全协议不匹配或证书无效，无法建立加密连接。可能原因：\n' +
+                    '1. 服务器证书 SANs 未包含当前域名或 IP 地址；\n' +
+                    '2. 根证书/服务器证书/客户端证书过期；\n' +
+                    '3. 域名解析错误，导致证书与域名不匹配；\n' +
+                    '4. 等等。',
+                icon: 'bi-shield-slash-fill',
+                bgClass: 'bg-indigo',
+                textClass: 'text-indigo',
+                iconBgClass: 'bg-indigo bg-opacity-10'
             };
         case 'Unknown':
         default:

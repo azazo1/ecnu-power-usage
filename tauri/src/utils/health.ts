@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type HealthKind = 'NoNet' | 'ServerDown' | 'NotLogin' | 'NoRoom' | 'Ok' | 'Unknown';
+export type HealthKind = 'NoNet' | 'ServerDown' | 'NotLogin' | 'NoRoom' | 'TlsError' | 'Ok' | 'Unknown';
 export interface HealthStatus {
     kind: HealthKind,
     message: string | null,

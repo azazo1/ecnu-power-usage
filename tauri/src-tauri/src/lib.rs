@@ -13,7 +13,7 @@ use commands::*;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod commands {
-    use std::path::PathBuf;
+    use std::{error::Error, path::PathBuf};
 
     use chromiumoxide::BrowserConfig;
     use chrono::{DateTime, FixedOffset};
@@ -31,6 +31,36 @@ mod commands {
         config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig},
         online,
     };
+
+    trait IsTlsError {
+        fn is_tls_error(&self) -> bool;
+    }
+
+    impl IsTlsError for reqwest::Error {
+        fn is_tls_error(&self) -> bool {
+            let mut source = self.source();
+
+            while let Some(err) = source {
+                if let Some(hyper_err) = err.downcast_ref::<hyper::Error>()
+                    && hyper_err.is_parse()
+                {
+                    return true;
+                }
+                let src_str = format!("{}", err).to_lowercase();
+                if src_str.contains("tls")
+                    || src_str.contains("certificate")
+                    || src_str.contains("handshake")
+                    || src_str.contains("invaliddata")
+                    || src_str.contains("invalidcontenttype")
+                {
+                    return true;
+                }
+                source = err.source();
+            }
+
+            false
+        }
+    }
 
     #[tauri::command]
     pub(crate) fn crate_version() -> &'static str {
@@ -165,6 +195,7 @@ mod commands {
         NotLogin,
         ServerDown,
         NoNet,
+        TlsError,
     }
 
     #[tauri::command]
@@ -180,7 +211,11 @@ mod commands {
             Err(ecnu_power_usage::Error::Reqwest(e)) => {
                 error!("health check reqwest: {e:?}");
                 if online::check(None).await {
-                    Ok(HealthStatus::ServerDown)
+                    if e.is_tls_error() {
+                        Ok(HealthStatus::TlsError)
+                    } else {
+                        Ok(HealthStatus::ServerDown)
+                    }
                 } else {
                     Ok(HealthStatus::NoNet)
                 }

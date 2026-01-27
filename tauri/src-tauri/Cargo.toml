@@ -36,3 +36,4 @@ chromiumoxide = "0.8.0"
 chrono = { version = "0.4.43", features = ["serde"] }
 reqwest = { version = "0.13.1", features = ["rustls"], default-features = false }
 tauri-plugin-dialog = "2.6.0"
+hyper = "1.8.1"
