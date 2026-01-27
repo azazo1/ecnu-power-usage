@@ -1,45 +1,41 @@
-# [workspace]
-# members = ['tauri']
-
 [package]
-name = "ecnu-power-usage"
-version = "0.1.0"
 edition = "2024"
+name = "ecnu-power-usage"
+readme = "README.md"
+version = "0.1.0"
 
 [dependencies]
 anyhow = "1.0.100"
 axum = "0.8.8"
-axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+axum-server = {version = "0.8.0", features = ["tls-rustls"]}
 chromiumoxide = "0.8.0"
-chrono = { version = "0.4.43", features = ["serde"] }
-clap = { version = "4.5.54", features = ["derive"] }
-csv-async = { version = "1.3.1", features = ["tokio"] }
+chrono = {version = "0.4.43", features = ["serde"]}
+clap = {version = "4.5.54", features = ["derive"]}
+csv-async = {version = "1.3.1", features = ["tokio"]}
 dirs-next = "2.0.0"
 futures = "0.3.31"
-reqwest = { version = "0.13.1", default-features = false, features = ["cookies", "form", "json", "query", "rustls"] }
+rcgen = {version = "0.14.7", features = ["pem", "x509-parser"]}
+reqwest = {version = "0.13.1", default-features = false, features = ["cookies", "form", "json", "query", "rustls"]}
 rustls = "0.23.36"
 rustls-pemfile = "2.2.0"
 sanitize-filename = "0.6.0"
-serde = { version = "1.0.228", features = ["derive"] }
+serde = {version = "1.0.228", features = ["derive"]}
 serde_json = "1.0.149"
 shellexpand = "3.1.1"
 thiserror = "2.0.18"
-tokio = { version = "1.49.0", features = [
+time = "0.3.46"
+tokio = {version = "1.49.0", features = [
   "fs",
   "io-util",
   "macros",
   "rt-multi-thread",
-] }
-tokio-util = { version = "0.7.18", features = ["io"] }
+]}
+tokio-util = {version = "0.7.18", features = ["io"]}
 toml = "0.9.11"
 tracing = "0.1.44"
 tracing-appender = "0.2.4"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-subscriber = {version = "0.3.22", features = ["env-filter"]}
 url = "2.5.8"
 
 [dev-dependencies]
 tempfile = "3.24.0"
-
-[[bin]]
-name = "ecnu_power_usage_server"
-path = "bin/server.rs"

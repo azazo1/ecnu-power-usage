@@ -1,7 +1,6 @@
 //! 服务端逻辑.
 use std::fmt::Debug;
 use std::io::{Cursor, SeekFrom};
-use std::net::SocketAddr;
 use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -23,7 +22,7 @@ use axum_server::tls_rustls::RustlsConfig;
 use chrono::{DateTime, FixedOffset, Local, TimeZone, Timelike};
 use reqwest::{Client, Method};
 use rustls::RootCertStore;
-use rustls::pki_types::pem::{PemObject, SectionKind};
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
 use serde::{Deserialize, Serialize};
