@@ -54,7 +54,8 @@
                                     class="d-flex flex-column gap-3 mt-3 pt-3 border-top border-secondary border-opacity-10">
                                     <div>
                                         <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <label class="form-label x-small fw-bold text-muted mb-0">客户端证书</label>
+                                            <label class="form-label x-small fw-bold text-muted mb-0">客户端证书
+                                                (client.crt)</label>
                                             <button type="button" @click="importFromFile('clientCert')"
                                                 class="btn btn-link p-0 x-small text-success text-decoration-none">
                                                 <i class="bi bi-file-earmark-arrow-up"></i> 导入
@@ -67,7 +68,8 @@
 
                                     <div>
                                         <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <label class="form-label x-small fw-bold text-muted mb-0">客户端私钥</label>
+                                            <label class="form-label x-small fw-bold text-muted mb-0">客户端私钥
+                                                (client.key)</label>
                                             <button type="button" @click="importFromFile('clientKey')"
                                                 class="btn btn-link p-0 x-small text-success text-decoration-none">
                                                 <i class="bi bi-file-earmark-arrow-up"></i> 导入
@@ -80,7 +82,8 @@
 
                                     <div>
                                         <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <label class="form-label x-small fw-bold text-muted mb-0">根证书</label>
+                                            <label class="form-label x-small fw-bold text-muted mb-0">根证书
+                                                (root-ca.crt)</label>
                                             <button type="button" @click="importFromFile('rootCA')"
                                                 class="btn btn-link p-0 x-small text-success text-decoration-none">
                                                 <i class="bi bi-file-earmark-arrow-up"></i> 导入
