@@ -8,8 +8,12 @@
 
 ### 服务端安装
 
+可以在 [releases](https://github.com/azazo1/ecnu-power-usage/releases) 界面下载预编译二进制文件 `ecnu_power_usage_server`, `ecnu_power_usage_cert_tool`.
+
+也可以自行编译:
+
 ```shell
-just install
+cargo install --git https://github.com/azazo1/ecnu-power-usage.git ecnu-power-usage
 ```
 
 `ecnu_power_usage_server` 和 `ecnu_power_usage_cert_tool` 会被安装到 `$CARGO_HOME/bin` 中.
@@ -38,13 +42,29 @@ server_key = "/path/to/server.key" # 服务端密钥
 root_ca = "/path/to/root_ca.crt" # 根证书
 ```
 
-- `tls` 如果填写, 那么自动启用 mTLS, 验证客户端访问, 客户端需要使用同样的自签名证书签发的客户端证书才能访问. 证书的生成参见 [证书生成].
+- `tls` 如果填写, 那么自动启用 mTLS, 验证客户端访问, 客户端需要使用同样的自签名证书签发的客户端证书才能访问. 证书的生成参见 [证书生成](#证书生成).
+- 启用 tls 能够在公网安全地传输数据, 防止信息泄露.
 
 ### 服务端运行
 
 ```shell
 ecnu_power_usage_server
 ```
+
+## 客户端
+
+客户端使用 tauri gui 框架构建, 在 `tauri/` 文件夹中.
+
+客户端可以直接下载 [releases](https://github.com/azazo1/ecnu-power-usage/releases) 中的可执行文件直接安装运行.
+也可以克隆此仓库进入 `tauri/` 文件夹使用命令:
+
+```shell
+bun run tauri build
+```
+
+自行编译打包.
+
+客户端第一次启动正常情况下因为没有进行配置, 无法连接到服务端, 点击弹窗右上角的设置按钮设置服务端的地址和 TLS 证书及密钥 (见 [证书生成](#证书生成)).
 
 ## 证书生成
 
