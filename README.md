@@ -53,10 +53,14 @@ ecnu_power_usage_server
 ```shell
 # 生成有效期 10 年的自签名根证书 -> root_ca.crt 和 root_ca.key
 ecnu_power_usage_sign_cert self-signed --age 10y --out root_ca
-# 生成有效期 10 年的服务器证书 -> server.crt 和 server.key
-ecnu_power_usage_sign_cert sign --root root_ca --age 10y --out server
+
+# 生成有效期 10 年的服务器证书 -> server.crt 和 server.key, 服务器的域名为 example.com, 请根据实际情况进行修改.
+ecnu_power_usage_sign_cert sign --root root_ca --age 10y --sans example.com --out server
+# 如果没有域名, 可以使用 --ip-sans, 使用下面这条命令替代上一条, IP 地址 127.0.0.1 需要根据实际情况替换成服务器 IP.
+ecnu_power_usage_sign_cert sign --root root_ca --age 10y --ip-sans 127.0.0.1 --out server
+
 # 生成有效期 10 年的客户端证书 -> client.crt 和 client.key
-ecnu_power_usage_sign_cert sign --root root_ca --age 10y --out client
+ecnu_power_usage_sign_cert sign --root root_ca --age 10y --client --out client
 ```
 
 - 证书生成方法不唯一, 也可以使用 `openssl` 自行生成.
