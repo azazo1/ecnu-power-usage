@@ -1,6 +1,6 @@
 //! 服务端逻辑.
 use std::fmt::Debug;
-use std::io::SeekFrom;
+use std::io::{Cursor, SeekFrom};
 use std::net::SocketAddr;
 use std::ops::Sub;
 use std::path::{Path, PathBuf};
@@ -18,8 +18,13 @@ use axum::{
     extract::State,
     http::{Response, StatusCode, header::COOKIE},
 };
+use axum_server::tls_rustls::RustlsConfig;
 use chrono::{DateTime, FixedOffset, Local, TimeZone, Timelike};
 use reqwest::{Client, Method};
+use rustls::RootCertStore;
+use rustls::pki_types::pem::{PemObject, SectionKind};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::server::WebPkiClientVerifier;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::fs::{self, File};
@@ -27,10 +32,11 @@ use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufRea
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::config::{
     ARCHIVE_DIRNAME, LOG_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig,
+    SERVER_CONFIG_FILE, ServerConfig,
 };
 use crate::error::{CSError, CSResult, Error, Result};
 use crate::{Cookies, Records};
@@ -676,9 +682,8 @@ async fn record_loop(state: Arc<AppState>) -> ! {
     }
 }
 
-/// todo: tls 支持
-/// 创建并启动后台服务.
-pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
+/// 创建并启动服务.
+pub async fn run_app() -> anyhow::Result<()> {
     const PKG_NAME: &str = env!("CARGO_PKG_NAME");
     let default_data_dir = shellexpand::tilde("~/.local/share");
     let default_config_dir = shellexpand::tilde("~/.config");
@@ -703,17 +708,13 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
         .await
         .with_context(move || config_dir_cloned.to_string_lossy().to_string())?;
     let data_dir_cloned = data_dir.clone();
-    let config_dir_cloned = config_dir.clone();
 
-    let room_config = RoomConfig::from_file(config_dir.join(ROOM_CONFIG_FILENAME))
-        .await
-        .with_context(move || {
-            config_dir_cloned
-                .join(ROOM_CONFIG_FILENAME)
-                .to_string_lossy()
-                .to_string()
-        });
+    let room_config = RoomConfig::from_toml_file(config_dir.join(ROOM_CONFIG_FILENAME)).await;
     info!("room config: {room_config:#?}");
+
+    let server_config = ServerConfig::from_toml_file(config_dir.join(SERVER_CONFIG_FILE)).await?;
+    info!("server config: {server_config:#?}");
+
     let app_state = Arc::new(AppState {
         querier: RwLock::new(if let Ok(room_config) = room_config {
             Querier::new(room_config)
@@ -742,11 +743,63 @@ pub async fn run_app(bind_address: SocketAddr) -> anyhow::Result<()> {
         .route("/download-archive", get(download_archive))
         .route("/list-archives", get(list_archives))
         .with_state(Arc::clone(&app_state));
-    let listener = TcpListener::bind(bind_address).await?;
     let handle = tokio::spawn(async move { record_loop(app_state).await });
-    axum::serve(listener, router).await?;
+
+    if let Some(server_tls_config) = server_config.tls_config {
+        // 加载 tls 服务
+
+        let mut root_cert_store = RootCertStore::empty();
+        for cert in certificate_der(&[&server_tls_config.root_ca]).await? {
+            root_cert_store
+                .add(cert)
+                .with_context(|| "load root certs failed")?;
+        }
+
+        let cert_chain =
+            certificate_der(&[&server_tls_config.server_crt, &server_tls_config.root_ca]).await?;
+
+        let server_key = PrivateKeyDer::from_pem_reader(Cursor::new(
+            fs::read(server_tls_config.server_key).await?,
+        ))?;
+
+        // WebPkiClientVerifier 会强制要求客户端发送证书
+        let client_verifier = WebPkiClientVerifier::builder(Arc::new(root_cert_store)).build()?;
+
+        // 将客户端验证器注入到配置中
+        let server_tls_config = rustls::ServerConfig::builder()
+            .with_client_cert_verifier(client_verifier)
+            .with_single_cert(cert_chain, server_key)?;
+
+        // 重新包装回 RustlsConfig
+        let mtls_config = RustlsConfig::from_config(Arc::new(server_tls_config));
+
+        axum_server::bind_rustls(server_config.bind_address, mtls_config)
+            .serve(router.into_make_service())
+            .await?;
+    } else {
+        warn!("launching without tls config, this service is only for dev usage.");
+        let listener = TcpListener::bind(server_config.bind_address).await?;
+        axum::serve(listener, router).await?;
+    }
+
     handle.await?;
     Ok(())
+}
+
+async fn certificate_der(
+    cert_paths: &[impl AsRef<Path>],
+) -> anyhow::Result<Vec<CertificateDer<'static>>> {
+    let mut certs = Vec::new();
+    for cert_path in cert_paths {
+        let root_ca = fs::read(cert_path)
+            .await
+            .with_context(|| format!("read cert failed: {:?}", cert_path.as_ref()))?;
+        let mut reader = Cursor::new(root_ca);
+        for cert in rustls_pemfile::certs(&mut reader) {
+            certs.push(cert?);
+        }
+    }
+    Ok(certs)
 }
 
 #[cfg(test)]

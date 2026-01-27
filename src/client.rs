@@ -1,9 +1,9 @@
-use std::{io::Cursor, time::Duration};
+use std::{io::Cursor, path::Path, time::Duration};
 
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
-use reqwest::{StatusCode, Url};
-use tokio::task::JoinHandle;
+use reqwest::{Certificate, Identity, StatusCode, Url};
+use tokio::{fs, task::JoinHandle};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -321,23 +321,40 @@ impl Client {
     }
 
     // 启用自签名 tls 证书
-    pub fn configure_tls(&mut self, client_cert: String, client_key: String, root_ca: String) {
-        todo!()
+    pub async fn configure_tls(
+        &mut self,
+        client_cert: impl AsRef<Path>,
+        client_key: impl AsRef<Path>,
+        root_ca: impl AsRef<Path>,
+    ) -> crate::Result<()> {
+        let (client_cert, client_key, root_ca) =
+            (client_cert.as_ref(), client_key.as_ref(), root_ca.as_ref());
+        let client_cert = fs::read_to_string(client_cert).await?;
+        let client_key = fs::read_to_string(client_key).await?;
+        let root_ca = fs::read_to_string(root_ca).await?;
+        let ident = Identity::from_pem(format!("{client_cert}\n{client_key}").as_ref())?;
+        let ca = Certificate::from_pem(root_ca.as_ref())?;
+        self.client = reqwest::ClientBuilder::new()
+            .tls_certs_only([ca])
+            .identity(ident)
+            .use_rustls_tls()
+            .build()?;
+        Ok(())
     }
 
     // 关闭 tls
     pub fn deconfigure_tls(&mut self) {
-        todo!()
+        self.client = reqwest::Client::default();
     }
 }
 
+/// used for early age dev
 pub struct GuardClient {
     client: Client,
     browser_config: BrowserConfig,
 }
 
 impl GuardClient {
-    // todo tls
     #[must_use]
     pub fn new(server_base: Url) -> Self {
         Self {
@@ -358,8 +375,6 @@ impl GuardClient {
 
     /// 守护服务端, 保持登录状态.
     pub async fn guard(self) -> crate::Result<()> {
-        // todo: 下面所有的失败 GUI 信息都可以提供延迟提醒.
-        // todo: 重试机制.
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
 
@@ -371,7 +386,6 @@ impl GuardClient {
                         Ok(cookies) => cookies,
                         Err(e) => {
                             error!("getting login cookies: {e:?}");
-                            // todo!("GUI 提示获取 cookies 失败.");
                             continue;
                         }
                     };
@@ -379,39 +393,32 @@ impl GuardClient {
                     match self.client.post_cookies(&cookies).await {
                         Ok(()) => {
                             info!("cookies posted");
-                            // todo!("GUI 显示成功提交 Cookies");
                         }
                         Err(e) => {
                             error!("cookies posting: {e:?}");
-                            // todo!("GUI 显示提交 Cookies 失败");
                         }
                     }
                 }
                 Err(Error::CS(CSError::RoomConfigMissing)) => {
-                    // todo!("GUI 提示需要进行选择宿舍房间信息")
                     let room_config = match self.with_browser(async |be| be.pick_room().await).await
                     {
                         Ok(room_config) => room_config,
                         Err(e) => {
                             error!("picking room: {e:?}");
-                            // todo!("GUI 提醒获取房间信息失败");
                             continue;
                         }
                     };
                     match self.client.post_room(&room_config).await {
                         Ok(()) => {
                             info!("room posted");
-                            // todo!("GUI 提示成功提交 room config");
                         }
                         Err(e) => {
                             error!("room posting: {e:?}");
-                            // todo!("GUI 提示 room 信息提交失败");
                         }
                     }
                 }
                 Err(e) => {
                     error!("getting degree: {e:?}");
-                    // todo!("GUI 提醒获取 degree 失败");
                 }
             }
         }
@@ -420,7 +427,10 @@ impl GuardClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::{CSError, Error, client::Client};
+    use crate::{
+        CSError, Error,
+        client::{Client, GuardClient},
+    };
 
     #[tokio::test]
     async fn list_archives() {
@@ -435,5 +445,13 @@ mod tests {
             client.download_archive("not-exists").await,
             Err(Error::CS(CSError::ArchiveNotFound))
         ));
+    }
+
+    #[tokio::test]
+    async fn guarding() {
+        tracing_subscriber::fmt().init();
+
+        let client = GuardClient::new("http://localhost:20531".parse().unwrap());
+        client.guard().await.unwrap();
     }
 }
