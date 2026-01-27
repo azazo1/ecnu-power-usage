@@ -606,10 +606,14 @@ async fn list_archives(
     info!("list archives request.");
 
     let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+    fs::create_dir_all(&archive_dir).await.ok();
     let mut rd = match fs::read_dir(&archive_dir).await {
         Ok(x) => x,
         Err(_) => {
-            return (StatusCode::NOT_FOUND, Json(Err(CSError::ArchiveDir)));
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Err(CSError::ArchiveDir)),
+            );
         }
     };
     let mut archive_metas = Vec::new();
