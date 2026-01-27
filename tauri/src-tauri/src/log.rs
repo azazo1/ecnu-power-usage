@@ -1,8 +1,8 @@
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 use tokio::fs;
 
@@ -25,7 +25,7 @@ pub(crate) async fn init() -> crate::Result<WorkerGuard> {
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(logging_appender)
         .with_ansi(false);
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let stdout_layer = tracing_subscriber::fmt::layer();
     tracing_subscriber::registry()
         .with(env_filter)

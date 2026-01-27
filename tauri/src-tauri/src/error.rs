@@ -12,8 +12,6 @@ pub(crate) enum Error {
     Log(#[from] tracing_appender::rolling::InitError),
     #[error(transparent)]
     Lib(#[from] ecnu_power_usage::Error),
-    #[error("invalid path, not utf-8")]
-    InvalidPath,
     #[error("certificate file is too large")]
     CertFileTooLarge,
     #[error("certificate path is not file")]

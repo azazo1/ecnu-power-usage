@@ -1,6 +1,5 @@
 use std::{
     ffi::OsString,
-    fs::Permissions,
     path::{Path, PathBuf},
 };
 
@@ -12,7 +11,7 @@ use tokio::{
     fs,
     io::{self, AsyncReadExt, AsyncWriteExt},
 };
-use tracing::info;
+use tracing::{info, warn};
 
 pub(crate) async fn log_dir() -> crate::Result<PathBuf> {
     let default = shellexpand::tilde("~/.local/share");
@@ -65,7 +64,10 @@ impl GuiConfig {
     pub(crate) async fn load_config() -> crate::Result<Self> {
         let config_path = config_dir().await?.join(CONFIG_FILENAME);
         info!("loading config: {config_path:?}");
-        let config = toml::from_str(&fs::read_to_string(config_path).await?)?;
+        let config = toml::from_str(&fs::read_to_string(config_path).await.unwrap_or_else(|e| {
+            warn!("read config file error: {e:?}, use default config instead.");
+            String::new()
+        }))?;
         info!("config loaded.");
         Ok(config)
     }
