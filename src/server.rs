@@ -694,20 +694,21 @@ pub async fn run_app() -> anyhow::Result<()> {
         .unwrap_or(default_config_dir.to_string().into())
         .join(PKG_NAME);
     let log_dir = data_dir.join(LOG_DIRNAME);
-    let _guard = log::init(&log_dir).await?;
+
+    fs::create_dir_all(&data_dir)
+        .await
+        .with_context(|| data_dir.to_string_lossy().to_string())?;
+    fs::create_dir_all(&config_dir)
+        .await
+        .with_context(|| config_dir.to_string_lossy().to_string())?;
+
+    let _guard = log::init(&log_dir)
+        .await
+        .with_context(|| "init log failed")?;
 
     info!("data dir: {data_dir:?}");
     info!("config dir: {config_dir:?}");
     info!("log dir: {log_dir:?}");
-    let data_dir_cloned = data_dir.clone();
-    let config_dir_cloned = config_dir.clone();
-    fs::create_dir_all(&data_dir)
-        .await
-        .with_context(move || data_dir_cloned.to_string_lossy().to_string())?;
-    fs::create_dir_all(&config_dir)
-        .await
-        .with_context(move || config_dir_cloned.to_string_lossy().to_string())?;
-    let data_dir_cloned = data_dir.clone();
 
     let room_config = RoomConfig::from_toml_file(config_dir.join(ROOM_CONFIG_FILENAME)).await;
     info!("room config: {room_config:#?}");
@@ -724,8 +725,8 @@ pub async fn run_app() -> anyhow::Result<()> {
         recorder: RwLock::new(
             Recorder::load_from_path(data_dir.join(RECORDS_FILENAME))
                 .await
-                .with_context(move || {
-                    data_dir_cloned
+                .with_context(|| {
+                    data_dir
                         .join(RECORDS_FILENAME)
                         .to_string_lossy()
                         .to_string()
@@ -760,7 +761,9 @@ pub async fn run_app() -> anyhow::Result<()> {
             certificate_der(&[&server_tls_config.server_crt, &server_tls_config.root_ca]).await?;
 
         let server_key = PrivateKeyDer::from_pem_reader(Cursor::new(
-            fs::read(server_tls_config.server_key).await?,
+            fs::read(server_tls_config.server_key)
+                .await
+                .with_context(|| "read tls server key failed")?,
         ))?;
 
         // WebPkiClientVerifier 会强制要求客户端发送证书
@@ -769,7 +772,8 @@ pub async fn run_app() -> anyhow::Result<()> {
         // 将客户端验证器注入到配置中
         let server_tls_config = rustls::ServerConfig::builder()
             .with_client_cert_verifier(client_verifier)
-            .with_single_cert(cert_chain, server_key)?;
+            .with_single_cert(cert_chain, server_key)
+            .with_context(|| "tls server config create failed")?;
 
         // 重新包装回 RustlsConfig
         let mtls_config = RustlsConfig::from_config(Arc::new(server_tls_config));
@@ -797,7 +801,7 @@ async fn certificate_der(
             .with_context(|| format!("read cert failed: {:?}", cert_path.as_ref()))?;
         let mut reader = Cursor::new(root_ca);
         for cert in rustls_pemfile::certs(&mut reader) {
-            certs.push(cert?);
+            certs.push(cert.with_context(|| "invalid certificate")?);
         }
     }
     Ok(certs)
