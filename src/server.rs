@@ -717,7 +717,8 @@ pub async fn run_app() -> anyhow::Result<()> {
     let room_config = RoomConfig::from_toml_file(config_dir.join(ROOM_CONFIG_FILENAME)).await;
     info!("room config: {room_config:#?}");
 
-    let server_config = ServerConfig::from_toml_file(config_dir.join(SERVER_CONFIG_FILE)).await?;
+    let server_config_file = config_dir.join(SERVER_CONFIG_FILE);
+    let server_config = ServerConfig::from_toml_file(&server_config_file, true).await?;
     info!("server config: {server_config:#?}");
 
     let app_state = Arc::new(AppState {

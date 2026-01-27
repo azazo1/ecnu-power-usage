@@ -24,7 +24,7 @@ pub(crate) struct ServerConfig {
 
 impl Default for ServerConfig {
     fn default() -> Self {
-        serde_json::from_str("").unwrap()
+        toml::from_str("").unwrap()
     }
 }
 
@@ -33,14 +33,27 @@ fn default_bind_address() -> SocketAddr {
 }
 
 impl ServerConfig {
-    pub(crate) async fn from_toml_file(file: impl AsRef<Path>) -> crate::Result<Self> {
+    pub(crate) async fn from_toml_file(
+        file: impl AsRef<Path>,
+        create_new: bool,
+    ) -> crate::Result<Self> {
         let config_path = file.as_ref();
-        let config: Self = toml::from_str(
-            &fs::read_to_string(&config_path)
-                .await
-                .map_err(|e| Error::FileRead(config_path.into(), e.to_string()))?,
-        )?;
-        Ok(config)
+        let content = fs::read_to_string(&config_path).await;
+        match content {
+            Ok(content) => Ok(toml::from_str(&content)?),
+            Err(e) => {
+                if !create_new {
+                    Err(e)?
+                }
+                let default_config = Self::default();
+                fs::write(
+                    config_path,
+                    toml::to_string_pretty(&default_config)?.as_bytes(),
+                )
+                .await?;
+                Ok(default_config)
+            }
+        }
     }
 }
 
