@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use rcgen::{
     BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
-    KeyUsagePurpose, PKCS_ECDSA_P256_SHA256, PKCS_ED25519, PKCS_RSA_SHA256, SanType,
+    KeyUsagePurpose, PKCS_ECDSA_P256_SHA256, PKCS_ED25519, SanType,
 };
 use std::{fs, io::Write, path::Path};
 use time::{Duration, OffsetDateTime};
@@ -38,7 +38,7 @@ pub enum Commands {
 
     /// 使用指定的根证书签发子证书 (服务器或客户端)
     ///
-    /// 签发时会根据 --is-client 自动设置证书的 Extended Key Usage。
+    /// 签发时会根据 --client 自动设置证书的 Extended Key Usage。
     Sign {
         /// 根证书的前缀 (需存在 .crt 和 .key 文件)
         #[arg(short, long)]
@@ -77,15 +77,14 @@ pub enum Commands {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum KeyAlgorithm {
     Ed25519,
-    Rsa,
     EcdsaP256,
 }
 
 impl KeyAlgorithm {
     fn generate_pair(&self) -> KeyPair {
+        // ring 后端暂时不支持 rsa.
         match self {
             Self::Ed25519 => KeyPair::generate_for(&PKCS_ED25519).unwrap(),
-            Self::Rsa => KeyPair::generate_for(&PKCS_RSA_SHA256).unwrap(),
             Self::EcdsaP256 => KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
         }
     }
@@ -106,12 +105,12 @@ fn main() -> anyhow::Result<()> {
             cn,
             sans,
             ip_sans,
-            client: is_client,
+            client,
             algo,
         } => {
             let duration = parse_age(&age)?;
             let issuer = load_ca_cert_issuer(&root)?;
-            create_leaf_cert(&issuer, &cn, &out, duration, sans, ip_sans, is_client, algo)?;
+            create_leaf_cert(&issuer, &cn, &out, duration, sans, ip_sans, client, algo)?;
         }
     }
 
