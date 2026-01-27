@@ -1,7 +1,10 @@
-default: install dev
+default: bun-install dev
 
 dev:
     bun run tauri dev
 
-install:
+bun-install:
     bun install
+
+build-release:
+    bun run tauri build
