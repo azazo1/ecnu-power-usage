@@ -17,7 +17,10 @@ mod commands {
 
     use chromiumoxide::BrowserConfig;
     use chrono::{DateTime, FixedOffset};
-    use ecnu_power_usage::{ArchiveMeta, CSError, Records, TimeSpan, client::BrowserExecutor};
+    use ecnu_power_usage::{
+        ArchiveMeta, CSError, Cookies, Records, TimeSpan, client::BrowserExecutor,
+        config::RoomConfig,
+    };
     use serde::Serialize;
     use tauri::State;
     use tauri_plugin_dialog::DialogExt;
@@ -64,17 +67,20 @@ mod commands {
         let be = BrowserExecutor::launch(BrowserConfig::clone(&browser_config))
             .await
             .map_err(|e| format!("failed to launch browser: {e:?}"))?;
-        let room = be
-            .with(async |be| be.pick_room().await)
+        let (room, cookies): (RoomConfig, ecnu_power_usage::Result<Cookies>) = be
+            .with(async |be| Ok((be.pick_room().await?, be.login_cookies().await)))
             .await
             .map_err(|e| format!("failed to pick room: {e:?}"))?;
-        app_state
-            .client
-            .read()
-            .await
+
+        let client = app_state.client.read().await;
+        client
             .post_room(&room)
             .await
-            .map_err(|e| format!("failed to post room: {e:?}"))
+            .map_err(|e| format!("failed to post room: {e:?}"))?;
+        if let Ok(cookies) = cookies {
+            client.post_cookies(&cookies).await.ok();
+        }
+        Ok(())
     }
 
     #[tauri::command]
@@ -198,7 +204,20 @@ mod commands {
             .await
             .map_err(|e| {
                 error!("create archive: {e:?}");
-                "failed to create archive.".to_string()
+                if let ecnu_power_usage::Error::CS(cse) = e {
+                    match cse {
+                        CSError::EmptyArchive
+                        | CSError::ArchiveDir
+                        | CSError::ListArchive
+                        | CSError::WriteArchive
+                        | CSError::DuplicatedArchive
+                        | CSError::InvalidArchiveName
+                        | CSError::ArchiveNotFound => cse.to_string(),
+                        _ => "failed to create archive".to_string(),
+                    }
+                } else {
+                    "failed to create archive".to_string()
+                }
             })
     }
 
