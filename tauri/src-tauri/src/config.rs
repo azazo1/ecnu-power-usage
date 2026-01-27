@@ -1,7 +1,4 @@
-use std::{
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use ecnu_power_usage::client::Client;
 use reqwest::{Certificate, Identity};
@@ -47,11 +44,11 @@ pub(crate) struct GuiConfig {
     #[serde(default = "default_server_base")]
     server_base: Url,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    client_cert: Option<OsString>,
+    client_cert: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    client_key: Option<OsString>,
+    client_key: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "rootCA")]
-    root_ca: Option<OsString>,
+    root_ca: Option<PathBuf>,
     #[serde(default)]
     use_self_signed_tls: bool,
 }
@@ -165,9 +162,9 @@ impl AppState {
             client
                 .configure_tls(&client_cert, &client_key, &root_ca)
                 .await?;
-            new_config.client_cert = Some(client_cert.into());
-            new_config.client_key = Some(client_key.into());
-            new_config.root_ca = Some(root_ca.into());
+            new_config.client_cert = Some(client_cert);
+            new_config.client_key = Some(client_key);
+            new_config.root_ca = Some(root_ca);
         } else {
             client.deconfigure_tls();
         }
