@@ -8,7 +8,7 @@
 
 ### 服务端安装
 
-可以在 [releases](https://github.com/azazo1/ecnu-power-usage/releases) 界面下载预编译二进制文件 `ecnu_power_usage_server`, `ecnu_power_usage_cert_tool`.
+可以在 [releases](https://github.com/azazo1/ecnu-power-usage/releases) 界面下载预编译二进制文件 `epu_server`, `epu_cert_tool`.
 
 也可以自行编译:
 
@@ -16,7 +16,7 @@
 cargo install --git https://github.com/azazo1/ecnu-power-usage.git ecnu-power-usage
 ```
 
-`ecnu_power_usage_server` 和 `ecnu_power_usage_cert_tool` 会被安装到 `$CARGO_HOME/bin` 中.
+`epu_server` 和 `epu_cert_tool` 会被安装到 `$CARGO_HOME/bin` 中.
 
 ### 服务端配置
 
@@ -48,7 +48,7 @@ root_ca = "/path/to/root-ca.crt" # 根证书
 ### 服务端运行
 
 ```shell
-ecnu_power_usage_server
+epu_server
 ```
 
 ## 客户端
@@ -70,19 +70,19 @@ bun run tauri build
 
 ## 证书生成
 
-使用 `ecnu_power_usage_cert_tool` 工具可以快速生成可用的自签名证书, CS 证书和密钥.
+使用 `epu_cert_tool` 工具可以快速生成可用的自签名证书, CS 证书和密钥.
 
 ```shell
 # 生成有效期 10 年的自签名根证书 -> root-ca.crt 和 root-ca.key
-ecnu_power_usage_cert_tool self-signed --age 10y --out root-ca
+epu_cert_tool self-signed --age 10y --out root-ca
 
 # 生成有效期 10 年的服务器证书 -> server.crt 和 server.key, 服务器的域名为 localhost, 请根据实际情况进行修改.
-ecnu_power_usage_cert_tool sign --root root-ca --age 10y --sans localhost --out server
+epu_cert_tool sign --root root-ca --age 10y --sans localhost --out server
 # 如果没有域名, 可以使用 --ip-sans, 使用下面这条命令替代上一条, IP 地址 127.0.0.1 需要根据实际情况替换成服务器 IP.
-# ecnu_power_usage_cert_tool sign --root root-ca --age 10y --ip-sans 127.0.0.1 --out server
+# epu_cert_tool sign --root root-ca --age 10y --ip-sans 127.0.0.1 --out server
 
 # 生成有效期 10 年的客户端证书 -> client.crt 和 client.key
-ecnu_power_usage_cert_tool sign --root root-ca --age 10y --client --out client
+epu_cert_tool sign --root root-ca --age 10y --client --out client
 ```
 
 - 证书生成方法不唯一, 也可以使用 `openssl` 自行生成.
