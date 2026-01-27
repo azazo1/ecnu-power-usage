@@ -53,6 +53,12 @@ pub(crate) struct GuiConfig {
     use_self_signed_tls: bool,
 }
 
+impl Default for GuiConfig {
+    fn default() -> Self {
+        toml::from_str("").unwrap()
+    }
+}
+
 fn default_server_base() -> Url {
     "https://localhost:20531".parse().unwrap()
 }
@@ -65,7 +71,7 @@ impl GuiConfig {
             warn!("read config file error: {e:?}, use default config instead.");
             String::new()
         }))?;
-        info!("config loaded.");
+        info!("config loaded: {config:#?}");
         Ok(config)
     }
 
@@ -143,10 +149,12 @@ pub(crate) struct AppState {
 impl AppState {
     pub(crate) async fn load() -> crate::Result<Self> {
         let config = GuiConfig::load_config().await?;
-        Ok(Self {
+        let this = Self {
             client: RwLock::new(Client::new(config.server_base.clone())),
-            config: RwLock::new(config),
-        })
+            config: RwLock::new(GuiConfig::default()),
+        };
+        this.set_config(config).await?;
+        Ok(this)
     }
 
     pub(crate) async fn set_config(&self, mut new_config: GuiConfig) -> crate::Result<()> {
