@@ -76,8 +76,8 @@ bun run tauri build
 # 生成有效期 10 年的自签名根证书 -> root-ca.crt 和 root-ca.key
 ecnu_power_usage_cert_tool self-signed --age 10y --out root-ca
 
-# 生成有效期 10 年的服务器证书 -> server.crt 和 server.key, 服务器的域名为 example.com, 请根据实际情况进行修改.
-ecnu_power_usage_cert_tool sign --root root-ca --age 10y --sans example.com --out server
+# 生成有效期 10 年的服务器证书 -> server.crt 和 server.key, 服务器的域名为 localhost, 请根据实际情况进行修改.
+ecnu_power_usage_cert_tool sign --root root-ca --age 10y --sans localhost --out server
 # 如果没有域名, 可以使用 --ip-sans, 使用下面这条命令替代上一条, IP 地址 127.0.0.1 需要根据实际情况替换成服务器 IP.
 # ecnu_power_usage_cert_tool sign --root root-ca --age 10y --ip-sans 127.0.0.1 --out server
 
@@ -87,6 +87,7 @@ ecnu_power_usage_cert_tool sign --root root-ca --age 10y --client --out client
 
 - 证书生成方法不唯一, 也可以使用 `openssl` 自行生成.
 - 注意生成服务端证书的时候 SAN / IP-SAN 至少需要指定一个, 不然可能无法成功建立 mTLS 链接.
+- 可以使用 `wget --certificate=client.crt --private-key=client.key --ca-certificate=root-ca.crt https://localhost:20531/get-records` 命令查看证书是否正确生成.
 
 当前目录下生成的 `server.key`, `server.crt`, `client.key`, `client.crt` 以及 `root-ca.crt` 就是配置中对应的证书和密钥文件.
 

@@ -14,7 +14,7 @@ clap = {version = "4.5.54", features = ["derive"]}
 csv-async = {version = "1.3.1", features = ["tokio"]}
 dirs-next = "2.0.0"
 futures = "0.3.31"
-rcgen = {version = "0.14.7", features = ["pem", "x509-parser"]}
+rcgen = { version = "0.14.7", features = ["pem", "ring", "x509-parser"] }
 reqwest = {version = "0.13.1", default-features = false, features = ["cookies", "form", "json", "query", "rustls"]}
 rustls = "0.23.36"
 rustls-pemfile = "2.2.0"
