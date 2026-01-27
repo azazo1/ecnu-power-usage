@@ -8,7 +8,7 @@ use tokio::fs;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct ServerTlsConfig {
-    pub(crate) server_crt: PathBuf,
+    pub(crate) server_cret: PathBuf,
     pub(crate) server_key: PathBuf,
     pub(crate) root_ca: PathBuf,
 }
