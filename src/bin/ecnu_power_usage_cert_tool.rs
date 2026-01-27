@@ -24,7 +24,7 @@ pub enum Commands {
         age: String,
 
         /// 输出文件的前缀 (会生成 .crt 和 .key)
-        #[arg(short, long, default_value = "root_ca")]
+        #[arg(short, long, default_value = "root-ca")]
         out: String,
 
         /// 证书持有者名称 (Common Name)
