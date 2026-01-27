@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
+use axum::extract::DefaultBodyLimit;
 use axum::{
     Form, Json, Router,
     response::IntoResponse,
@@ -742,7 +743,8 @@ pub async fn run_app() -> anyhow::Result<()> {
         .route("/get-degree", get(get_degree))
         .route("/download-archive", get(download_archive))
         .route("/list-archives", get(list_archives))
-        .with_state(Arc::clone(&app_state));
+        .with_state(Arc::clone(&app_state))
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024));
     let handle = tokio::spawn(async move { record_loop(app_state).await });
 
     if let Some(server_tls_config) = server_config.tls_config {
