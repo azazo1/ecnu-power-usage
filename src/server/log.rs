@@ -26,7 +26,7 @@ pub(crate) async fn init(log_dir: impl AsRef<Path>) -> crate::Result<WorkerGuard
         .with_writer(logging_appender)
         .with_ansi(false);
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let stdout_layer = tracing_subscriber::fmt::layer();
+    let stdout_layer = tracing_subscriber::fmt::layer().with_target(false);
     tracing_subscriber::registry()
         .with(env_filter)
         .with(stdout_layer)
