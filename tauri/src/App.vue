@@ -245,6 +245,15 @@ onMounted(async () => {
     }, 5000);
 });
 
+const notifyConfig = {
+    NoNet: { title: '网络已断开', msg: '请检查网络设置。' },
+    ServerDown: { title: '服务器连接失败', msg: '后端服务暂时无法访问。' },
+    NotLogin: { title: '登录已过期', msg: '请重新登录以继续。' },
+    NoRoom: { title: '房间未绑定', msg: '请先配置您的宿舍房间号。' },
+    TlsError: { title: '安全连接失败', msg: '证书校验无效，连接已终止。' },
+    Unknown: { title: '系统错误', msg: '发生未知异常。' }
+};
+
 // 执行检查并更新状态
 async function performHealthCheck(): Promise<HealthStatus> {
     const rawStatus = currentHealth.value;
@@ -259,6 +268,9 @@ async function performHealthCheck(): Promise<HealthStatus> {
             refreshRecords();
             refreshArchives();
             refreshSelectedArchive();
+        } else {
+            const config = notifyConfig[status.kind] || notifyConfig.Unknown;
+            sysNotify(config.title, config.msg);
         }
     } else if (status.message !== rawStatus.message) {
         // 如果 kind 没变但 message 变了也更新一下
@@ -293,14 +305,6 @@ function handleConfigSave(_config: GuiConfig) {
     // 保存后立即尝试重连，给用户即时反馈
     manualHealthCheck();
 }
-
-// --- 系统通知 ---
-
-onMounted(() => {
-    setTimeout(async () => {
-        console.log("notify", await sysNotify("test", "content"));
-    }, 3000);
-})
 </script>
 
 <style scoped>
