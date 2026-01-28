@@ -117,6 +117,7 @@ import HealthModal from "./components/HealthModal.vue";
 import { healthCheck, HealthStatus } from "./utils/health";
 import ConfigModal from "./components/ConfigModal.vue";
 import { GuiConfig } from "./utils/config";
+import { sysNotify } from "./utils/notify";
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
@@ -292,6 +293,14 @@ function handleConfigSave(_config: GuiConfig) {
     // 保存后立即尝试重连，给用户即时反馈
     manualHealthCheck();
 }
+
+// --- 系统通知 ---
+
+onMounted(() => {
+    setTimeout(async () => {
+        console.log("notify", await sysNotify("test", "content"));
+    }, 3000);
+})
 </script>
 
 <style scoped>

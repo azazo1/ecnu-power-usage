@@ -3,13 +3,16 @@ use anyhow::Context;
 mod config;
 mod error;
 mod log;
+mod notify;
 mod online;
 
 use chromiumoxide::BrowserConfig;
+use commands::*;
 use config::AppState;
 use error::{Error, Result};
+use tracing::{info, warn};
 
-use commands::*;
+use crate::notify::NotifyManager;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod commands {
@@ -24,11 +27,13 @@ mod commands {
     use serde::Serialize;
     use tauri::State;
     use tauri_plugin_dialog::DialogExt;
+    use tauri_plugin_notification::NotificationExt;
     use tokio::{fs, sync::oneshot};
-    use tracing::{error, info};
+    use tracing::{error, info, warn};
 
     use crate::{
         config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig},
+        notify::{self, NotifyManager, NotifyPermission},
         online,
     };
 
@@ -282,6 +287,39 @@ mod commands {
             Err("cancelled".into())
         }
     }
+
+    /// 发送系统通知.
+    #[tauri::command]
+    pub(crate) async fn sys_notify(
+        app: tauri::AppHandle,
+        manager: State<'_, Result<NotifyManager, notify::Error>>,
+        title: String,
+        message: String,
+    ) -> Result<bool, String> {
+        app.notification()
+            .builder()
+            .title(&title)
+            .body(&message)
+            .show()
+            .map_err(|e| {
+                error!("notification error: {e:?}");
+                format!("notification error: {e}")
+            })?;
+        match manager.inner() {
+            Ok(manager) => {
+                let perm = manager.request_permission().await;
+                if !matches!(perm, NotifyPermission::Granted) {
+                    warn!("system notify permission denied: {perm:?}");
+                    // Err("system notify permission denied")?
+                }
+                manager.notify(&title, &message).await.map_err(|e| {
+                    error!("send notification: {e:?}");
+                    format!("sending notification failed: {e}")
+                })
+            }
+            Err(e) => Err(format!("{e}")),
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -293,8 +331,14 @@ pub async fn run() -> anyhow::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState::load().await?)
         .manage(BrowserConfig::builder().with_head().build().unwrap())
+        .manage(
+            NotifyManager::init()
+                .inspect(|_| info!("notify manager init success"))
+                .inspect_err(|_| warn!("notify manager init failed")),
+        ) // 可能初始化失败, 忽略失败, 禁用系统通知功能.
         .invoke_handler(tauri::generate_handler![
             crate_version,
             update_config,
@@ -307,7 +351,8 @@ pub async fn run() -> anyhow::Result<()> {
             get_degree,
             health_check,
             create_archive,
-            pick_cert
+            pick_cert,
+            sys_notify
         ])
         .run(tauri::generate_context!())
         .with_context(|| "error launch tauri app")?;
