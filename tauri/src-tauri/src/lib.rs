@@ -5,6 +5,7 @@ mod config;
 mod error;
 mod log;
 mod online;
+mod tray;
 
 use chromiumoxide::BrowserConfig;
 use commands::*;
@@ -38,6 +39,7 @@ pub async fn run() -> anyhow::Result<()> {
             pick_cert,
             sys_notify
         ])
+        .setup(|app| Ok(tray::init_tray(app)?))
         .run(tauri::generate_context!())
         .with_context(|| "error launch tauri app")?;
     Ok(())

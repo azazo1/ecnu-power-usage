@@ -18,6 +18,8 @@ pub(crate) enum Error {
     CertNotFile,
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
+    #[error(transparent)]
+    Tauri(#[from] tauri::Error)
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
