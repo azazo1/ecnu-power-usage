@@ -763,7 +763,7 @@ pub async fn run_app() -> anyhow::Result<()> {
         }
 
         let cert_chain =
-            certificate_der(&[&server_tls_config.server_cret, &server_tls_config.root_ca]).await?;
+            certificate_der(&[&server_tls_config.server_cert, &server_tls_config.root_ca]).await?;
 
         let server_key = PrivateKeyDer::from_pem_reader(Cursor::new(
             fs::read(server_tls_config.server_key)
