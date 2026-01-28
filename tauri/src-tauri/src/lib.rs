@@ -9,7 +9,6 @@ use chromiumoxide::BrowserConfig;
 use commands::*;
 use config::AppState;
 use error::{Error, Result};
-use tracing::{info, warn};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod commands {
@@ -26,7 +25,7 @@ mod commands {
     use tauri_plugin_dialog::DialogExt;
     use tauri_plugin_notification::NotificationExt;
     use tokio::{fs, sync::oneshot};
-    use tracing::{error, info, warn};
+    use tracing::{error, info};
 
     use crate::{
         config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig},
