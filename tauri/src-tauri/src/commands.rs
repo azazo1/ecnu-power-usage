@@ -282,3 +282,20 @@ pub(crate) fn sys_notify(
             format!("notification error: {e}")
         })
 }
+
+#[tauri::command]
+pub(crate) async fn delete_archive(
+    app_state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
+    app_state
+        .client
+        .read()
+        .await
+        .delete_archive(name)
+        .await
+        .map_err(|e| {
+            error!("delete archive failed: {e:?}");
+            format!("delete archive failed: {e}")
+        })
+}

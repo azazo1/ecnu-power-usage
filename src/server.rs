@@ -35,8 +35,8 @@ use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info, warn};
 
 use crate::config::{
-    ARCHIVE_DIRNAME, LOG_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig,
-    SERVER_CONFIG_FILE, ServerConfig,
+    ARCHIVE_DIRNAME, DELETED_DIRNAME, LOG_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME,
+    RoomConfig, SERVER_CONFIG_FILENAME, ServerConfig,
 };
 use crate::error::{CSError, CSResult, Error, Result};
 use crate::{Cookies, Records};
@@ -271,7 +271,9 @@ struct AppState {
 
 fn is_valid_archive_name(name: &str) -> bool {
     let archive_name = Path::new(name).file_name().and_then(|s| s.to_str());
-    sanitize_filename::is_sanitized(name) && archive_name.is_some_and(|f| f == name)
+    sanitize_filename::is_sanitized(name)
+        && archive_name.is_some_and(|f| f == name)
+        && name.find(['/', '\\']).is_none()
 }
 
 async fn post_room(
@@ -651,6 +653,82 @@ async fn list_archives(
     (StatusCode::OK, Json(Ok(archive_metas)))
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub(crate) struct DeleteArchiveArgs {
+    pub(crate) name: String,
+}
+
+async fn delete_archive(
+    State(state): State<Arc<AppState>>,
+    Form(args): Form<DeleteArchiveArgs>,
+) -> (StatusCode, Json<CSResult<()>>) {
+    info!("delete archive request: {args:#?}");
+    let DeleteArchiveArgs { name: archive_name } = args;
+    if !is_valid_archive_name(&archive_name) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(Err(CSError::InvalidArchiveName)),
+        );
+    }
+    let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+    let deleted_dir = state.data_dir.join(DELETED_DIRNAME);
+    let archive_file = archive_dir.join(format!("{}.csv", archive_name));
+    let archive_meta_file = archive_dir.join(format!("{}.toml", archive_name));
+
+    if !archive_meta_file.exists() {
+        return (StatusCode::NOT_FOUND, Json(Err(CSError::ArchiveNotFound)));
+    }
+
+    let now = Local::now();
+    let now = now.format("%Y%m%d-%H%M");
+
+    let mut deleted_archive_file = deleted_dir.join(format!("{}.csv.{}.{}", archive_name, now, 0));
+    let mut deleted_archive_meta_file =
+        deleted_dir.join(format!("{}.toml.{}.{}", archive_name, now, 0));
+    // 已删除归档名称去重.
+    while deleted_archive_file.exists() {
+        let Some(prev_ext) = deleted_archive_file.extension().and_then(|s| s.to_str()) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Err(CSError::InvalidArchiveName)),
+            );
+        };
+        let num = if let Ok(num) = prev_ext.parse::<usize>() {
+            num + 1
+        } else {
+            1
+        };
+        deleted_archive_file = deleted_archive_file.with_extension(format!("{num}"));
+        deleted_archive_meta_file = deleted_archive_meta_file.with_extension(format!("{num}"));
+    }
+
+    fs::create_dir_all(&archive_dir).await.ok();
+    if let Err(e) = fs::create_dir_all(&deleted_dir).await {
+        error!("create DELETED dir failed: {e:?}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Err(CSError::DeletedArchiveFailed)),
+        );
+    }
+    info!("renaming: {archive_file:?} -> {deleted_archive_file:?}");
+    if let Err(e) = fs::rename(&archive_file, &deleted_archive_file).await {
+        error!("renaming failed: {e:?}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Err(CSError::DeletedArchiveFailed)),
+        );
+    }
+    info!("renaming: {archive_meta_file:?} -> {deleted_archive_meta_file:?}");
+    if let Err(e) = fs::rename(&archive_meta_file, &deleted_archive_meta_file).await {
+        error!("renaming failed: {e:?}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Err(CSError::DeletedArchiveFailed)),
+        );
+    }
+    (StatusCode::OK, Json(Ok(())))
+}
+
 async fn record_loop(state: Arc<AppState>) -> ! {
     enum LoopState {
         Normal,
@@ -717,7 +795,7 @@ pub async fn run_app() -> anyhow::Result<()> {
     let room_config = RoomConfig::from_toml_file(config_dir.join(ROOM_CONFIG_FILENAME)).await;
     info!("room config: {room_config:#?}");
 
-    let server_config_file = config_dir.join(SERVER_CONFIG_FILE);
+    let server_config_file = config_dir.join(SERVER_CONFIG_FILENAME);
     let server_config = ServerConfig::from_toml_file(&server_config_file, true).await?;
     info!("server config: {server_config:#?}");
 
@@ -748,6 +826,7 @@ pub async fn run_app() -> anyhow::Result<()> {
         .route("/get-degree", get(get_degree))
         .route("/download-archive", get(download_archive))
         .route("/list-archives", get(list_archives))
+        .route("/delete-archive", post(delete_archive))
         .with_state(Arc::clone(&app_state))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024));
     let handle = tokio::spawn(async move { record_loop(app_state).await });
@@ -756,14 +835,15 @@ pub async fn run_app() -> anyhow::Result<()> {
         // 加载 tls 服务
 
         let mut root_cert_store = RootCertStore::empty();
-        for cert in certificate_der(&[&server_tls_config.root_ca]).await? {
+        for cert in load_certificate_der(&[&server_tls_config.root_ca]).await? {
             root_cert_store
                 .add(cert)
                 .with_context(|| "load root certs failed")?;
         }
 
         let cert_chain =
-            certificate_der(&[&server_tls_config.server_cert, &server_tls_config.root_ca]).await?;
+            load_certificate_der(&[&server_tls_config.server_cert, &server_tls_config.root_ca])
+                .await?;
 
         let server_key = PrivateKeyDer::from_pem_reader(Cursor::new(
             fs::read(server_tls_config.server_key)
@@ -796,7 +876,7 @@ pub async fn run_app() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn certificate_der(
+async fn load_certificate_der(
     cert_paths: &[impl AsRef<Path>],
 ) -> anyhow::Result<Vec<CertificateDer<'static>>> {
     let mut certs = Vec::new();

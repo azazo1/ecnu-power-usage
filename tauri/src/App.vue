@@ -84,7 +84,7 @@
 
                 <!-- Archives List View -->
                 <ArchiveList v-else-if="currentTab === 'archives' && !selectedArchive" :archive-list="archiveList"
-                    @open="openArchive" @refresh="refreshSelectedArchive" />
+                    @open="openArchive" @refresh="refreshSelectedArchive" @delete="handleDeleteArchive" />
 
                 <!-- Archive Detail View -->
                 <DataVisualizer v-else-if="currentTab === 'archives' && selectedArchive"
@@ -110,7 +110,7 @@ import { ref, onMounted, onUnmounted } from "vue";
 import DataVisualizer from "./components/DataVisualizer.vue";
 import { getRecords, type ElectricityRecord } from "./utils/records";
 import { invoke } from "@tauri-apps/api/core";
-import { Archive, ArchiveMeta, createArchive, downloadArchive, listArchives } from "./utils/archive";
+import { Archive, ArchiveMeta, createArchive, deleteArchive, downloadArchive, listArchives } from "./utils/archive";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ArchiveList from "./components/ArchiveList.vue";
 import HealthModal from "./components/HealthModal.vue";
@@ -193,6 +193,11 @@ async function handleCreateArchive(startTime: Date | null, endTime: Date | null,
     }
 }
 
+async function handleDeleteArchive(name: string) {
+    await deleteArchive(name)
+    await refreshArchives();
+}
+
 // --- Notification ---
 
 interface Notification {
@@ -232,7 +237,8 @@ function removeNotification(id: number) {
     notifications.value = notifications.value.filter(n => n.id !== id);
 }
 
-// --- health check ---
+// --- Health Check ---
+
 const currentHealth = ref<HealthStatus>({ kind: 'Ok', message: null });
 let healthCheckTimer: number | null = null;
 

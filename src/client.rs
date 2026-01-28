@@ -10,7 +10,7 @@ use crate::{
     Cookies, Records, TimeSpan,
     config::RoomConfig,
     error::{CSError, CSResult, Error},
-    server::{ArchiveMeta, CreateArchiveArgs, DownloadArchiveArgs},
+    server::{ArchiveMeta, CreateArchiveArgs, DeleteArchiveArgs, DownloadArchiveArgs},
 };
 
 pub struct BrowserExecutor {
@@ -273,12 +273,12 @@ impl Client {
         Ok(resp?)
     }
 
-    pub async fn download_archive(&self, archive_name: impl AsRef<str>) -> crate::Result<Records> {
+    pub async fn download_archive(&self, name: impl AsRef<str>) -> crate::Result<Records> {
         let resp = self
             .client
             .get(self.server_base.join("/download-archive")?)
             .query(&DownloadArchiveArgs {
-                name: archive_name.as_ref().to_string(),
+                name: name.as_ref().to_string(),
             })
             .send()
             .await?;
@@ -313,6 +313,19 @@ impl Client {
             .send()
             .await?;
         let result: CSResult<Vec<ArchiveMeta>> = resp.json().await?;
+        Ok(result?)
+    }
+
+    pub async fn delete_archive(&self, name: impl AsRef<str>) -> crate::Result<()> {
+        let resp = self
+            .client
+            .post(self.server_base.join("/delete-archive")?)
+            .form(&DeleteArchiveArgs {
+                name: name.as_ref().to_string(),
+            })
+            .send()
+            .await?;
+        let result: CSResult<()> = resp.json().await?;
         Ok(result?)
     }
 

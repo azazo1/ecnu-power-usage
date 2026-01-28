@@ -39,7 +39,8 @@ pub async fn run() -> anyhow::Result<()> {
             health_check,
             create_archive,
             pick_cert,
-            sys_notify
+            sys_notify,
+            delete_archive
         ])
         .setup(|app| Ok(tray::init_tray(app)?))
         .on_window_event(|window, evt| {

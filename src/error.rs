@@ -80,6 +80,8 @@ pub enum CSError {
     InvalidArchiveName,
     #[error("archive not found")]
     ArchiveNotFound,
+    #[error("failed to delete archive")]
+    DeletedArchiveFailed,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

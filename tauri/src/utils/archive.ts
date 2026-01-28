@@ -49,3 +49,7 @@ export async function createArchive(startTime: Date | null, endTime: Date | null
     let rawMeta: RawArchiveMeta = await invoke("create_archive", { startTime: startTime && formatRFC3339(startTime), endTime: endTime && formatRFC3339(endTime), name });
     return fromRawMeta(rawMeta);
 }
+
+export async function deleteArchive(name: string) {
+    await invoke("delete_archive", { name });
+}

@@ -91,4 +91,5 @@ pub const RECORDS_FILENAME: &str = "records.csv";
 pub const ARCHIVE_DIRNAME: &str = "archives";
 pub const ROOM_CONFIG_FILENAME: &str = "room.toml";
 pub const LOG_DIRNAME: &str = "logs";
-pub(crate) const SERVER_CONFIG_FILE: &str = "server.toml";
+pub(crate) const SERVER_CONFIG_FILENAME: &str = "server.toml";
+pub(crate) const DELETED_DIRNAME: &str = "deleted";
