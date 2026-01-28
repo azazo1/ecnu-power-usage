@@ -1264,6 +1264,8 @@ dependencies = [
  "dirs-next",
  "ecnu-power-usage",
  "hyper",
+ "objc2",
+ "objc2-app-kit",
  "reqwest 0.13.1",
  "serde",
  "serde_json",
