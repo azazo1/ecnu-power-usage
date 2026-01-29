@@ -730,17 +730,27 @@ async fn delete_archive(
 }
 
 async fn clear_cookies(State(state): State<Arc<AppState>>) -> StatusCode {
+    info!("clear cookies request.");
     state.querier.write().await.refresh(Cookies::empty());
     StatusCode::OK
 }
 
-async fn clear_room(State(state): State<Arc<AppState>>) -> StatusCode {
+async fn clear_room(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<()>>) {
+    info!("clear room request.");
     state
         .querier
         .write()
         .await
         .set_room_config(RoomConfig::empty());
-    StatusCode::OK
+    if let Err(e) = RoomConfig::empty()
+        .save_to_file(state.config_dir.join(ROOM_CONFIG_FILENAME))
+        .await
+    {
+        error!("saving room config: {e:?}");
+        (StatusCode::OK, Json(Err(CSError::SaveRoomConfig)))
+    } else {
+        (StatusCode::OK, Json(Ok(())))
+    }
 }
 
 async fn record_loop(state: Arc<AppState>) -> ! {

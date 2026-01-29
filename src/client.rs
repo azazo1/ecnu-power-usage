@@ -345,7 +345,8 @@ impl Client {
             .post(self.server_base.join("/clear-room")?)
             .send()
             .await?;
-        resp.error_for_status()?;
+        let result: CSResult<()> = resp.json().await?;
+        result?;
         Ok(())
     }
 
