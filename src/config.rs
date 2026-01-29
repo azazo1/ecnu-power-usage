@@ -66,6 +66,10 @@ pub struct RoomConfig {
 }
 
 impl RoomConfig {
+    pub fn empty() -> Self {
+        Default::default()
+    }
+
     pub fn is_invalid(&self) -> bool {
         self.elcarea < 0 || self.room_no.is_empty() || self.elcbuis.is_empty()
     }

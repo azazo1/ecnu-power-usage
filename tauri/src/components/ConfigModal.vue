@@ -119,6 +119,31 @@
                             </div>
                         </div>
                     </form>
+
+                    <div class="mt-4 pt-3 border-top border-light">
+                        <label class="form-label x-small fw-bold text-secondary mb-2 d-flex align-items-center gap-2">
+                            <i class="bi bi-hdd-stack"></i>
+                            数据维护 (点击即刻生效)
+                        </label>
+
+                        <div class="d-flex gap-2">
+                            <button type="button" @click="handleClearCookies" :disabled="loading"
+                                class="btn btn-light btn-sm flex-grow-1 rounded-3 d-flex align-items-center justify-content-center gap-2 py-1 x-small text-secondary btn-action-hover">
+                                <span v-if="loading" class="spinner-border spinner-border-sm"
+                                    style="width: 0.8rem; height: 0.8rem;"></span>
+                                <i v-else class="bi bi-eraser"></i>
+                                <span>清除 Cookies</span>
+                            </button>
+
+                            <button type="button" @click="handleClearRoom" :disabled="loading"
+                                class="btn btn-light btn-sm flex-grow-1 rounded-3 d-flex align-items-center justify-content-center gap-2 py-1 x-small text-secondary btn-action-hover">
+                                <span v-if="loading" class="spinner-border spinner-border-sm"
+                                    style="width: 0.8rem; height: 0.8rem;"></span>
+                                <i v-else class="bi bi-arrow-counterclockwise"></i>
+                                <span>重置房间信息</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="card-footer bg-white border-top border-light p-3 d-flex gap-2 justify-content-end">
@@ -138,7 +163,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { getConfigCmd, GuiConfig, pickCertCmd, updateConfigCmd as saveConfigCmd } from '../utils/config';
+import { clearCookiesCmd, clearRoomCmd, getConfigCmd, GuiConfig, pickCertCmd, updateConfigCmd as saveConfigCmd } from '../utils/config';
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits<{
@@ -207,6 +232,28 @@ async function importFromFile(field: 'clientCert' | 'clientKey' | 'rootCA') {
             console.error(e);
             emit('error', '读取文件失败', String(e));
         }
+    }
+}
+
+async function handleClearCookies() {
+    loading.value = true;
+    try {
+        await clearCookiesCmd();
+    } catch (e) {
+        emit('error', '清除登录 Cookies 失败', String(e));
+    } finally {
+        loading.value = false;
+    }
+}
+
+async function handleClearRoom() {
+    loading.value = true;
+    try {
+        await clearRoomCmd();
+    } catch (e) {
+        emit('error', '清除房间信息失败', String(e));
+    } finally {
+        loading.value = false;
     }
 }
 </script>
@@ -303,5 +350,38 @@ async function importFromFile(field: 'clientCert' | 'clientKey' | 'rootCA') {
 
 .btn-link.x-small:hover {
     opacity: 1;
+}
+
+/* 自定义按钮悬停效果 */
+.btn-action-hover {
+    border: 1px solid transparent;
+    /* 预留边框位置防止抖动 */
+    transition: all 0.2s ease;
+    background-color: #f8f9fa;
+    /* 对应 bootstrap 的 bg-light */
+}
+
+/* 悬停时：背景变淡红，文字变红，边框变红 */
+.btn-action-hover:hover:not(:disabled) {
+    background-color: #fff5f5;
+    /* 极淡的红色背景 */
+    color: #dc3545 !important;
+    /* text-danger */
+    border-color: #ffcdd2;
+    transform: translateY(-1px);
+    /* 微微上浮，增加点击欲望 */
+    box-shadow: 0 2px 4px rgba(220, 53, 69, 0.1);
+}
+
+/* 点击时（Active） */
+.btn-action-hover:active:not(:disabled) {
+    transform: translateY(0);
+    background-color: #ffe6e6;
+}
+
+/* 禁用状态 */
+.btn-action-hover:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 </style>

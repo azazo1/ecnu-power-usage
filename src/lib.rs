@@ -54,6 +54,12 @@ impl Debug for Cookies {
 }
 
 impl Cookies {
+    pub fn empty() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+
     fn cookie_sanitize(content: &str) -> String {
         content
             .chars()

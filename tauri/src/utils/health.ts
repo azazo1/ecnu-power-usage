@@ -7,7 +7,7 @@ export interface HealthStatus {
 }
 
 /// 检查状态
-export async function healthCheck(): Promise<HealthStatus> {
+export async function healthCheckCmd(): Promise<HealthStatus> {
     try {
         let kind: HealthKind = await invoke('health_check');
         return {

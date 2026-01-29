@@ -729,6 +729,20 @@ async fn delete_archive(
     (StatusCode::OK, Json(Ok(())))
 }
 
+async fn clear_cookies(State(state): State<Arc<AppState>>) -> StatusCode {
+    state.querier.write().await.refresh(Cookies::empty());
+    StatusCode::OK
+}
+
+async fn clear_room(State(state): State<Arc<AppState>>) -> StatusCode {
+    state
+        .querier
+        .write()
+        .await
+        .set_room_config(RoomConfig::empty());
+    StatusCode::OK
+}
+
 async fn record_loop(state: Arc<AppState>) -> ! {
     enum LoopState {
         Normal,
@@ -827,6 +841,8 @@ pub async fn run_app() -> anyhow::Result<()> {
         .route("/download-archive", get(download_archive))
         .route("/list-archives", get(list_archives))
         .route("/delete-archive", post(delete_archive))
+        .route("/clear-cookies", post(clear_cookies))
+        .route("/clear-room", post(clear_room))
         .with_state(Arc::clone(&app_state))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024));
     let handle = tokio::spawn(async move { record_loop(app_state).await });

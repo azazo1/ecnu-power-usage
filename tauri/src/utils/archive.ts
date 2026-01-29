@@ -25,7 +25,7 @@ function fromRawMeta(rawMeta: RawArchiveMeta): ArchiveMeta {
     };
 }
 
-export async function listArchives(): Promise<ArchiveMeta[]> {
+export async function listArchivesCmd(): Promise<ArchiveMeta[]> {
     let rawMetas: RawArchiveMeta[] = await invoke("list_archives");
     let metas: ArchiveMeta[] = [];
     for (let i = 0; i < rawMetas.length; ++i) {
@@ -40,16 +40,16 @@ export interface Archive {
     content: ElectricityRecord[]
 }
 
-export async function downloadArchive(name: string): Promise<Archive> {
+export async function downloadArchiveCmd(name: string): Promise<Archive> {
     let arc: [string, RawRecord[]] = await invoke("download_archive", { archiveName: name });
     return { path: arc[0], content: fromRawRecords(arc[1]) };
 }
 
-export async function createArchive(startTime: Date | null, endTime: Date | null, name: string | null): Promise<ArchiveMeta> {
+export async function createArchiveCmd(startTime: Date | null, endTime: Date | null, name: string | null): Promise<ArchiveMeta> {
     let rawMeta: RawArchiveMeta = await invoke("create_archive", { startTime: startTime && formatRFC3339(startTime), endTime: endTime && formatRFC3339(endTime), name });
     return fromRawMeta(rawMeta);
 }
 
-export async function deleteArchive(name: string) {
+export async function deleteArchiveCmd(name: string) {
     await invoke("delete_archive", { name });
 }

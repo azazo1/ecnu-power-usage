@@ -329,6 +329,26 @@ impl Client {
         Ok(result?)
     }
 
+    pub async fn clear_cookies(&self) -> crate::Result<()> {
+        let resp = self
+            .client
+            .post(self.server_base.join("/clear-cookies")?)
+            .send()
+            .await?;
+        resp.error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn clear_room(&self) -> crate::Result<()> {
+        let resp = self
+            .client
+            .post(self.server_base.join("/clear-room")?)
+            .send()
+            .await?;
+        resp.error_for_status()?;
+        Ok(())
+    }
+
     pub fn set_server_base(&mut self, server_base: Url) {
         self.server_base = server_base;
     }

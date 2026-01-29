@@ -299,3 +299,27 @@ pub(crate) async fn delete_archive(
             format!("delete archive failed: {e}")
         })
 }
+
+#[tauri::command]
+pub(crate) async fn clear_room(app_state: State<'_, AppState>) -> Result<(), String> {
+    app_state
+        .client
+        .read()
+        .await
+        .clear_room()
+        .await
+        .map_err(|e| format!("clearing room failed: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn clear_cookies(app_state: State<'_, AppState>) -> Result<(), String> {
+    app_state
+        .client
+        .read()
+        .await
+        .clear_cookies()
+        .await
+        .map_err(|e| format!("clearing cookeis failed: {e}"))?;
+    Ok(())
+}

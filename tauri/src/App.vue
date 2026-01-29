@@ -110,11 +110,11 @@ import { ref, onMounted, onUnmounted } from "vue";
 import DataVisualizer from "./components/DataVisualizer.vue";
 import { getRecords, type ElectricityRecord } from "./utils/records";
 import { invoke } from "@tauri-apps/api/core";
-import { Archive, ArchiveMeta, createArchive, deleteArchive, downloadArchive, listArchives } from "./utils/archive";
+import { Archive, ArchiveMeta, createArchiveCmd, deleteArchiveCmd, downloadArchiveCmd, listArchivesCmd } from "./utils/archive";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ArchiveList from "./components/ArchiveList.vue";
 import HealthModal from "./components/HealthModal.vue";
-import { healthCheck, HealthStatus } from "./utils/health";
+import { healthCheckCmd, HealthStatus } from "./utils/health";
 import ConfigModal from "./components/ConfigModal.vue";
 import { GuiConfig } from "./utils/config";
 import { sysNotify } from "./utils/notify";
@@ -149,7 +149,7 @@ async function refreshRecords() {
 
 async function refreshArchives() {
     try {
-        archiveList.value = await listArchives();
+        archiveList.value = await listArchivesCmd();
     } catch (e) {
         notifyError("获取归档列表失败", `获取内容失败: ${e}`);
     }
@@ -158,7 +158,7 @@ async function refreshArchives() {
 async function refreshSelectedArchive() {
     if (selectedArchive.value != null) {
         try {
-            selectedArchiveData.value = await downloadArchive(selectedArchive.value);
+            selectedArchiveData.value = await downloadArchiveCmd(selectedArchive.value);
         } catch (e) {
             notifyError("获取归档记录失败", `${e}`);
         }
@@ -167,7 +167,7 @@ async function refreshSelectedArchive() {
 
 async function openArchive(archiveName: string) {
     try {
-        selectedArchiveData.value = await downloadArchive(archiveName);
+        selectedArchiveData.value = await downloadArchiveCmd(archiveName);
         selectedArchive.value = archiveName;
     } catch (e) {
         notifyError("打开归档失败", `${e}`);
@@ -180,7 +180,7 @@ async function getCrateVersion(): Promise<string> {
 
 async function handleCreateArchive(startTime: Date | null, endTime: Date | null, name: string | null) {
     try {
-        let meta = await createArchive(startTime, endTime, name);
+        let meta = await createArchiveCmd(startTime, endTime, name);
         console.log(meta);
         // 触发成功通知
         notifySuccess('归档创建成功', `已归档 ${meta.recordsNum} 条记录`);
@@ -194,7 +194,7 @@ async function handleCreateArchive(startTime: Date | null, endTime: Date | null,
 }
 
 async function handleDeleteArchive(name: string) {
-    await deleteArchive(name)
+    await deleteArchiveCmd(name)
     await refreshArchives();
 }
 
@@ -263,7 +263,7 @@ const notifyConfig = {
 // 执行检查并更新状态
 async function performHealthCheck(): Promise<HealthStatus> {
     const rawStatus = currentHealth.value;
-    const status = await healthCheck();
+    const status = await healthCheckCmd();
     // 只有状态发生改变时才更新，避免不必要的响应式触发（虽然 Vue 会处理基本类型的 diff）
     if (status.kind !== rawStatus.kind) {
         console.log(`Health status changed: ${rawStatus.kind} -> ${status.kind}`);

@@ -19,3 +19,11 @@ export async function getConfigCmd(): Promise<GuiConfig> {
 export async function pickCertCmd(): Promise<string> {
     return await invoke<string>("pick_cert");
 }
+
+export async function clearRoomCmd() {
+    await invoke("clear_room");
+}
+
+export async function clearCookiesCmd() {
+    await invoke("clear_cookies");
+}
