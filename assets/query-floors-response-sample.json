@@ -1,0 +1,32 @@
+{
+    "floors": [
+        {
+            "floorId": "147",
+            "floorName": "1"
+        },
+        {
+            "floorId": "148",
+            "floorName": "2"
+        },
+        {
+            "floorId": "149",
+            "floorName": "3"
+        },
+        {
+            "floorId": "150",
+            "floorName": "4"
+        },
+        {
+            "floorId": "151",
+            "floorName": "5"
+        },
+        {
+            "floorId": "152",
+            "floorName": "6"
+        },
+        {
+            "floorId": "153",
+            "floorName": "7"
+        }
+    ]
+}

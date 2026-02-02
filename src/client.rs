@@ -2,7 +2,7 @@ use std::{io::Cursor, path::Path, time::Duration};
 
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
-use reqwest::{Certificate, Identity, StatusCode, Url};
+use reqwest::{Certificate, Identity, StatusCode, Url, header::COOKIE};
 use tokio::{fs, task::JoinHandle};
 use tracing::{error, info, warn};
 
@@ -10,6 +10,7 @@ use crate::{
     Cookies, Records, TimeSpan,
     config::RoomConfig,
     error::{CSError, CSResult, Error},
+    rooms::{Buildings, Districts, Floors, RoomInfo, Rooms},
     server::{ArchiveMeta, CreateArchiveArgs, DeleteArchiveArgs, DownloadArchiveArgs},
 };
 
@@ -62,8 +63,8 @@ impl BrowserExecutor {
             }
         });
 
-        #[cfg(debug_assertions)]
-        browser.clear_cookies().await?;
+        // #[cfg(debug_assertions)]
+        // browser.clear_cookies().await?;
 
         Ok(Self {
             browser,
@@ -223,6 +224,15 @@ pub struct Client {
 }
 
 impl Client {
+    pub const QUERY_DISTRICT_URL: &str =
+        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricarea";
+    pub const QUERY_BUILDINGS_URL: &str =
+        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricbuis";
+    pub const QUERY_FLOORS_URL: &str =
+        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricfloors";
+    pub const QUERY_ROOMS_URL: &str =
+        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricrooms";
+
     #[must_use]
     pub fn new(server_base: Url) -> Self {
         Self {
@@ -380,6 +390,143 @@ impl Client {
     pub fn deconfigure_tls(&mut self) {
         self.client = reqwest::Client::default();
     }
+
+    /// 获取学校宿舍的信息 (宿舍代码及其对应的可视值).
+    pub async fn get_room_info(
+        &self,
+        cookies: &Cookies,
+        room_config: &RoomConfig,
+    ) -> crate::Result<RoomInfo> {
+        let parts: [&str; 4] = *room_config
+            .room_no
+            .splitn(4, '_')
+            .collect::<Vec<&str>>()
+            .as_array::<4>()
+            .ok_or(Error::InvalidRoomConfig)?;
+        // dd_XX_dd_dd
+        let room_name = parts[0];
+        let district_id = parts[1];
+        let floor_id = parts[3];
+        let building_id: &str = &room_config.elcbuis;
+        let area_id: &str = &room_config.elcarea.to_string();
+
+        // 在这里是直接请求学校的网站, 因此不需要 self.client, 也不能使用(TLS 配置不兼容).
+        // 但是需要附上 cookies 数据.
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            format!(
+                "JSESSIONID={}; cookie={}",
+                cookies.j_session_id, cookies.cookie
+            )
+            .parse()
+            .map_err(|_| Error::InvalidCookies)?,
+        );
+        headers.insert(
+            "X-CSRF-TOKEN",
+            cookies
+                .x_csrf_token
+                .parse()
+                .map_err(|_| Error::InvalidCookies)?,
+        );
+        // fixme: 我没辙了, 在 macos 上一直报错 tls handshake eof, 也不知道什么问题.
+        let client = reqwest::ClientBuilder::new()
+            .default_headers(headers)
+            .build()?;
+        let mut districts: Districts = client
+            .post(Self::QUERY_DISTRICT_URL)
+            .form(&[
+                // sysid=1 表示查询电费系统, sysid=2 表示查询水费系统, 后者这里不需要.
+                ("sysid", "1"),
+            ])
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(|e| {
+                Error::Ecnu(format!(
+                    "invalid district response, maybe permission denied: {e:?}"
+                ))
+            })?;
+        let district = districts
+            .districts
+            .into_iter()
+            .find(|d| d.district_id == district_id)
+            .ok_or(Error::RoomInfoNotFound)?;
+
+        let buildings: Buildings = client
+            .post(Self::QUERY_BUILDINGS_URL)
+            .form(&[("sysid", "1"), ("area", area_id), ("district", district_id)])
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(|e| {
+                Error::Ecnu(format!(
+                    "invalid building response, maybe permission denied: {e:?}"
+                ))
+            })?;
+        let building = buildings
+            .buildings
+            .into_iter()
+            .find(|b| b.building_id == building_id)
+            .ok_or(Error::RoomInfoNotFound)?;
+
+        let floors: Floors = client
+            .post(Self::QUERY_FLOORS_URL)
+            .form(&[
+                ("sysid", "1"),
+                ("area", area_id),
+                ("district", district_id),
+                ("build", building_id),
+            ])
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(|e| {
+                Error::Ecnu(format!(
+                    "invalid floors response, maybe permission denied: {e:?}"
+                ))
+            })?;
+        let floor = floors
+            .floors
+            .into_iter()
+            .find(|f| f.floor_id == floor_id)
+            .ok_or(Error::RoomInfoNotFound)?;
+
+        let rooms: Rooms = client
+            .post(Self::QUERY_ROOMS_URL)
+            .form(&[
+                ("sysid", "1"),
+                ("area", area_id),
+                ("district", district_id),
+                ("build", building_id),
+                ("floor", floor_id),
+            ])
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(|e| {
+                Error::Ecnu(format!(
+                    "invalid room response, maybe permission denied: {e:?}"
+                ))
+            })?;
+        let room = rooms
+            .rooms
+            .into_iter()
+            .find(|f| f.room_name == room_name)
+            .ok_or(Error::RoomInfoNotFound)?;
+
+        Ok(RoomInfo {
+            area: districts.areas.pop().ok_or(Error::RoomInfoNotFound)?,
+            district,
+            building,
+            floor,
+            room,
+        })
+    }
 }
 
 /// used for early age dev
@@ -461,9 +608,13 @@ impl GuardClient {
 
 #[cfg(test)]
 mod tests {
+    use chromiumoxide::BrowserConfig;
+
     use crate::{
         CSError, Error,
-        client::{Client, GuardClient},
+        client::{BrowserExecutor, Client, GuardClient},
+        config::RoomConfig,
+        rooms::{Area, Building, District, Floor, Room, RoomInfo},
     };
 
     #[tokio::test]
@@ -487,5 +638,47 @@ mod tests {
 
         let client = GuardClient::new("http://localhost:20531".parse().unwrap());
         client.guard().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn room_info() {
+        let cookies =
+            BrowserExecutor::launch(BrowserConfig::builder().with_head().build().unwrap())
+                .await
+                .unwrap()
+                .with(async |be| be.login_cookies().await)
+                .await
+                .unwrap();
+        let room_config = RoomConfig {
+            room_no: "4408_MH_83_257".into(),
+            elcarea: 102,
+            elcbuis: "new-83_MH".into(),
+        };
+        let client = Client::new("http://localhost:20531".parse().unwrap());
+        assert_eq!(
+            client.get_room_info(&cookies, &room_config).await.unwrap(),
+            RoomInfo {
+                area: Area {
+                    area_id: "102".into(),
+                    area_name: "华东师范大学".into()
+                },
+                district: District {
+                    district_id: "MH".into(),
+                    district_name: "剑川路公寓".into(),
+                },
+                building: Building {
+                    building_id: "new-83_MH".into(),
+                    building_name: "闵行本科生4号楼".into()
+                },
+                floor: Floor {
+                    floor_id: "257".into(),
+                    floor_name: "4".into()
+                },
+                room: Room {
+                    room_id: "4408_MH_83_257".into(),
+                    room_name: "4408".into()
+                }
+            }
+        );
     }
 }

@@ -1,0 +1,16 @@
+{
+    "rooms": [
+        {
+            "roomId": "1101_BY_1_227",
+            "roomName": "1101"
+        },
+        {
+            "roomId": "1102_BY_1_227",
+            "roomName": "1102"
+        },
+        {
+            "roomId": "1103_BY_1_227",
+            "roomName": "1103"
+        }
+    ]
+}

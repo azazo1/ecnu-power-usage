@@ -42,6 +42,12 @@ pub enum Error {
     Utf8(#[from] FromUtf8Error),
     #[error(transparent)]
     Log(#[from] tracing_appender::rolling::InitError),
+    #[error("invalid room config")]
+    InvalidRoomConfig,
+    #[error("room info not found in the ecnu database")]
+    RoomInfoNotFound,
+    #[error("invalid cookies provided")]
+    InvalidCookies
 }
 
 /// Client-Server error

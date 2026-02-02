@@ -7,11 +7,15 @@ use tokio::{fs::File, io::AsyncRead};
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod rooms;
 pub mod server;
 
 pub use error::{CSError, Error, Result};
 pub use server::{ArchiveMeta, TimeSpan};
 
+/// Headers:
+/// - Cookie: cookie=___; JSESSIONID=___
+/// - X-CSRF-TOKEN: ___
 #[derive(Deserialize, Serialize, Default)]
 pub struct Cookies {
     j_session_id: String,
