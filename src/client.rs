@@ -73,6 +73,10 @@ impl BrowserExecutor {
         })
     }
 
+    pub async fn clear_browser_cookies(&self) -> crate::Result<()> {
+        Ok(self.browser.clear_cookies().await?)
+    }
+
     async fn wait_for_login(page: &Page) -> crate::Result<()> {
         info!("ecnu checking login state...");
         page.wait_for_navigation().await?;
@@ -81,6 +85,11 @@ impl BrowserExecutor {
         {
             tokio::time::sleep(Duration::from_millis(300)).await;
             page.wait_for_navigation().await?;
+        }
+        if let Ok(_ele) = page.find_element("#main-frame-error").await {
+            Err(Error::BrowserPage(
+                "chromium page showed error, probably network issues".to_string(),
+            ))?;
         }
         info!("ecnu is logined.");
         Ok(())
@@ -429,7 +438,7 @@ impl Client {
                 .parse()
                 .map_err(|_| Error::InvalidCookies)?,
         );
-        // fixme: 我没辙了, 在 macos 上一直报错 tls handshake eof, 也不知道什么问题.
+
         let client = reqwest::ClientBuilder::new()
             .default_headers(headers)
             .build()?;
@@ -614,7 +623,7 @@ mod tests {
         CSError, Error,
         client::{BrowserExecutor, Client, GuardClient},
         config::RoomConfig,
-        rooms::{Area, Building, District, Floor, Room, RoomInfo},
+        rooms::{Area, Building, District, Districts, Floor, Room, RoomInfo},
     };
 
     #[tokio::test]
@@ -638,6 +647,21 @@ mod tests {
 
         let client = GuardClient::new("http://localhost:20531".parse().unwrap());
         client.guard().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn room_config() {
+        let be = BrowserExecutor::launch(BrowserConfig::builder().with_head().build().unwrap())
+            .await
+            .unwrap();
+        let room_config = be
+            .with(async |be| {
+                // be.clear_browser_cookies().await?;
+                be.pick_room().await
+            })
+            .await
+            .unwrap();
+        dbg!(room_config);
     }
 
     #[tokio::test]
@@ -680,5 +704,41 @@ mod tests {
                 }
             }
         );
+    }
+
+    #[test]
+    fn deser() {
+        let content = r#"{"areas":[{"areaId":"102","areaName":"华东师范大学"}],
+        "districts":[{"districtId":"MH","districtName":"剑川路公寓"},{"districtId":"HM",
+        "districtName":"虹梅南路公寓"},{"districtId":"BY","districtName":"普陀校外公寓"},
+        {"districtId":"ZB","districtName":"普陀校内宿舍"}],"buils":[{"buiId":"new-80_MH",
+        "buiName":"闵行本科生1号楼"},{"buiId":"new-81_MH","buiName":"闵行本科生2号楼"},
+        {"buiId":"new-82_MH","buiName":"闵行本科生3号楼"},{"buiId":"new-83_MH","buiName":
+        "闵行本科生4号楼"},{"buiId":"new-84_MH","buiName":"闵行本科生5号楼"},{"buiId":
+        "new-85_MH","buiName":"闵行本科生6号楼"},{"buiId":"new-86_MH","buiName":
+        "闵行本科生7号楼"},{"buiId":"new-87_MH","buiName":"闵行本科生8号楼"},{"buiId":
+        "new-88_MH","buiName":"闵行本科生9号楼"},{"buiId":"new-89_MH","buiName":
+        "闵行本科生10号楼"},{"buiId":"new-90_MH","buiName":"闵行本科生11号楼"},{"buiId":
+        "new-91_MH","buiName":"闵行本科生12号楼"},{"buiId":"new-92_MH","buiName":
+        "闵行本科生16号楼"},{"buiId":"new-93_MH","buiName":"闵行本科生19号楼"},{"buiId":
+        "new-94_MH","buiName":"闵行本科生20号楼"},{"buiId":"new-95_MH","buiName":
+        "闵行本科生21号楼"},{"buiId":"new-96_MH","buiName":"闵行本科生22号楼"},
+        {"buiId":"new-97_MH","buiName":"闵行本科生13号楼"},{"buiId":"new-98_MH",
+        "buiName":"闵行本科生14号楼"},{"buiId":"new-99_MH","buiName":"闵行本科生15号楼"}],
+        "floors":[{"floorId":"487","floorName":"1"},{"floorId":"488","floorName":"2"},
+        {"floorId":"489","floorName":"3"},{"floorId":"490","floorName":"4"},
+        {"floorId":"491","floorName":"5"},{"floorId":"492","floorName":"6"}],"rooms":
+        [{"roomId":"1101_MH_80_487","roomName":"1101"},{"roomId":"1103_MH_80_487",
+        "roomName":"1103"},{"roomId":"1104_MH_80_487","roomName":"1104"},
+        {"roomId":"1105_MH_80_487","roomName":"1105"},{"roomId":"1106_MH_80_487",
+        "roomName":"1106"},{"roomId":"1107_MH_80_487","roomName":"1107"},
+        {"roomId":"1108_MH_80_487","roomName":"1108"},{"roomId":"1109_MH_80_487",
+        "roomName":"1109"},{"roomId":"1110_MH_80_487","roomName":"1110"},
+        {"roomId":"1111_MH_80_487","roomName":"1111"},{"roomId":"1112_MH_80_487",
+        "roomName":"1112"},{"roomId":"1113_MH_80_487","roomName":"1113"},
+        {"roomId":"1115_MH_80_487","roomName":"1115"},{"roomId":"1117_MH_80_487",
+        "roomName":"1117"}]}"#;
+        let districts: Districts = serde_json::from_str(content).unwrap();
+        dbg!(districts);
     }
 }

@@ -58,7 +58,7 @@ pub struct Districts {
     /// 楼层, 如: 1
     pub floors: Vec<Floor>,
     /// 房间, 如:
-    pub rooms: Vec<u8>,
+    pub rooms: Vec<Room>,
 }
 
 /// 查询地区所有建筑
