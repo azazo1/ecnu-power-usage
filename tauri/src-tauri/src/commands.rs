@@ -5,6 +5,7 @@ use chromiumoxide::BrowserConfig;
 use chrono::{DateTime, FixedOffset};
 use ecnu_power_usage::{
     ArchiveMeta, CSError, Cookies, Records, TimeSpan, client::BrowserExecutor, config::RoomConfig,
+    rooms::RoomInfo,
 };
 use serde::Serialize;
 use tauri::State;
@@ -322,4 +323,13 @@ pub(crate) async fn clear_cookies(app_state: State<'_, AppState>) -> Result<(), 
         .await
         .map_err(|e| format!("clearing cookeis failed: {e}"))?;
     Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn get_room_info(app_state: State<'_, AppState>) -> Result<RoomInfo, String> {
+    let client = app_state.client.read().await;
+    client.get_room_info().await.map_err(|e| {
+        error!("get room info failed: {e:?}");
+        format!("get room info failed: {e}")
+    })
 }

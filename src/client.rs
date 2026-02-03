@@ -2,7 +2,7 @@ use std::{io::Cursor, path::Path, time::Duration};
 
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
-use reqwest::{Certificate, Identity, StatusCode, Url, header::COOKIE};
+use reqwest::{Certificate, Identity, StatusCode, Url};
 use tokio::{fs, task::JoinHandle};
 use tracing::{error, info, warn};
 
@@ -10,7 +10,7 @@ use crate::{
     Cookies, Records, TimeSpan,
     config::RoomConfig,
     error::{CSError, CSResult, Error},
-    rooms::{Buildings, Districts, Floors, RoomInfo, Rooms},
+    rooms::RoomInfo,
     server::{ArchiveMeta, CreateArchiveArgs, DeleteArchiveArgs, DownloadArchiveArgs},
 };
 
@@ -233,15 +233,6 @@ pub struct Client {
 }
 
 impl Client {
-    pub const QUERY_DISTRICT_URL: &str =
-        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricarea";
-    pub const QUERY_BUILDINGS_URL: &str =
-        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricbuis";
-    pub const QUERY_FLOORS_URL: &str =
-        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricfloors";
-    pub const QUERY_ROOMS_URL: &str =
-        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricrooms";
-
     #[must_use]
     pub fn new(server_base: Url) -> Self {
         Self {
@@ -369,6 +360,25 @@ impl Client {
         Ok(())
     }
 
+    pub async fn get_room(&self) -> crate::Result<RoomConfig> {
+        let resp = self
+            .client
+            .get(self.server_base.join("/get-room")?)
+            .send()
+            .await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn get_room_info(&self) -> crate::Result<RoomInfo> {
+        let resp = self
+            .client
+            .get(self.server_base.join("/get-room-info")?)
+            .send()
+            .await?;
+        let result: CSResult<RoomInfo> = resp.json().await?;
+        Ok(result?)
+    }
+
     pub fn set_server_base(&mut self, server_base: Url) {
         self.server_base = server_base;
     }
@@ -398,143 +408,6 @@ impl Client {
     // 关闭 tls
     pub fn deconfigure_tls(&mut self) {
         self.client = reqwest::Client::default();
-    }
-
-    /// 获取学校宿舍的信息 (宿舍代码及其对应的可视值).
-    pub async fn get_room_info(
-        &self,
-        cookies: &Cookies,
-        room_config: &RoomConfig,
-    ) -> crate::Result<RoomInfo> {
-        let parts: [&str; 4] = *room_config
-            .room_no
-            .splitn(4, '_')
-            .collect::<Vec<&str>>()
-            .as_array::<4>()
-            .ok_or(Error::InvalidRoomConfig)?;
-        // dd_XX_dd_dd
-        let room_name = parts[0];
-        let district_id = parts[1];
-        let floor_id = parts[3];
-        let building_id: &str = &room_config.elcbuis;
-        let area_id: &str = &room_config.elcarea.to_string();
-
-        // 在这里是直接请求学校的网站, 因此不需要 self.client, 也不能使用(TLS 配置不兼容).
-        // 但是需要附上 cookies 数据.
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            COOKIE,
-            format!(
-                "JSESSIONID={}; cookie={}",
-                cookies.j_session_id, cookies.cookie
-            )
-            .parse()
-            .map_err(|_| Error::InvalidCookies)?,
-        );
-        headers.insert(
-            "X-CSRF-TOKEN",
-            cookies
-                .x_csrf_token
-                .parse()
-                .map_err(|_| Error::InvalidCookies)?,
-        );
-
-        let client = reqwest::ClientBuilder::new()
-            .default_headers(headers)
-            .build()?;
-        let mut districts: Districts = client
-            .post(Self::QUERY_DISTRICT_URL)
-            .form(&[
-                // sysid=1 表示查询电费系统, sysid=2 表示查询水费系统, 后者这里不需要.
-                ("sysid", "1"),
-            ])
-            .send()
-            .await?
-            .json()
-            .await
-            .map_err(|e| {
-                Error::Ecnu(format!(
-                    "invalid district response, maybe permission denied: {e:?}"
-                ))
-            })?;
-        let district = districts
-            .districts
-            .into_iter()
-            .find(|d| d.district_id == district_id)
-            .ok_or(Error::RoomInfoNotFound)?;
-
-        let buildings: Buildings = client
-            .post(Self::QUERY_BUILDINGS_URL)
-            .form(&[("sysid", "1"), ("area", area_id), ("district", district_id)])
-            .send()
-            .await?
-            .json()
-            .await
-            .map_err(|e| {
-                Error::Ecnu(format!(
-                    "invalid building response, maybe permission denied: {e:?}"
-                ))
-            })?;
-        let building = buildings
-            .buildings
-            .into_iter()
-            .find(|b| b.building_id == building_id)
-            .ok_or(Error::RoomInfoNotFound)?;
-
-        let floors: Floors = client
-            .post(Self::QUERY_FLOORS_URL)
-            .form(&[
-                ("sysid", "1"),
-                ("area", area_id),
-                ("district", district_id),
-                ("build", building_id),
-            ])
-            .send()
-            .await?
-            .json()
-            .await
-            .map_err(|e| {
-                Error::Ecnu(format!(
-                    "invalid floors response, maybe permission denied: {e:?}"
-                ))
-            })?;
-        let floor = floors
-            .floors
-            .into_iter()
-            .find(|f| f.floor_id == floor_id)
-            .ok_or(Error::RoomInfoNotFound)?;
-
-        let rooms: Rooms = client
-            .post(Self::QUERY_ROOMS_URL)
-            .form(&[
-                ("sysid", "1"),
-                ("area", area_id),
-                ("district", district_id),
-                ("build", building_id),
-                ("floor", floor_id),
-            ])
-            .send()
-            .await?
-            .json()
-            .await
-            .map_err(|e| {
-                Error::Ecnu(format!(
-                    "invalid room response, maybe permission denied: {e:?}"
-                ))
-            })?;
-        let room = rooms
-            .rooms
-            .into_iter()
-            .find(|f| f.room_name == room_name)
-            .ok_or(Error::RoomInfoNotFound)?;
-
-        Ok(RoomInfo {
-            area: districts.areas.pop().ok_or(Error::RoomInfoNotFound)?,
-            district,
-            building,
-            floor,
-            room,
-        })
     }
 }
 
@@ -679,8 +552,10 @@ mod tests {
             elcbuis: "new-83_MH".into(),
         };
         let client = Client::new("http://localhost:20531".parse().unwrap());
+        client.post_room(&room_config).await.unwrap();
+        client.post_cookies(&cookies).await.unwrap();
         assert_eq!(
-            client.get_room_info(&cookies, &room_config).await.unwrap(),
+            client.get_room_info().await.unwrap(),
             RoomInfo {
                 area: Area {
                     area_id: "102".into(),

@@ -57,7 +57,7 @@ impl ServerConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomConfig {
     pub room_no: String,

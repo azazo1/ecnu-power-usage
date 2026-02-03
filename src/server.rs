@@ -1,4 +1,5 @@
 //! 服务端逻辑.
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::{Cursor, SeekFrom};
 use std::ops::Sub;
@@ -30,7 +31,7 @@ use serde_json::json;
 use tokio::fs::{self, File};
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info, warn};
 
@@ -39,6 +40,7 @@ use crate::config::{
     RoomConfig, SERVER_CONFIG_FILENAME, ServerConfig,
 };
 use crate::error::{CSError, CSResult, Error, Result};
+use crate::rooms::{Buildings, Districts, Floors, RoomInfo, Rooms};
 use crate::{Cookies, Records};
 
 mod log;
@@ -59,6 +61,7 @@ struct Querier {
     config: RoomConfig,
     cookies: Cookies,
     client: Client,
+    room_info_cache: Mutex<HashMap<RoomConfig, RoomInfo>>,
 }
 
 impl Debug for Querier {
@@ -78,6 +81,7 @@ impl Querier {
             config,
             cookies: Default::default(),
             client: Default::default(),
+            room_info_cache: Default::default(),
         }
     }
 
@@ -132,6 +136,157 @@ impl Querier {
             Err(Error::Ecnu(ret.msg))?
         }
         ret.degree.ok_or(Error::NoDegree)
+    }
+
+    pub const QUERY_DISTRICT_URL: &str =
+        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricarea";
+    pub const QUERY_BUILDINGS_URL: &str =
+        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricbuis";
+    pub const QUERY_FLOORS_URL: &str =
+        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricfloors";
+    pub const QUERY_ROOMS_URL: &str =
+        "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricrooms";
+
+    /// 获取学校宿舍的信息 (宿舍代码及其对应的可视值).
+    pub async fn get_room_info(&self) -> crate::Result<RoomInfo> {
+        if !self.config.is_invalid()
+            && let Some(room_info) = self.room_info_cache.lock().await.get(&self.config)
+        {
+            return Ok(room_info.clone());
+        }
+        let parts: [&str; 4] = *self
+            .config
+            .room_no
+            .splitn(4, '_')
+            .collect::<Vec<&str>>()
+            .as_array::<4>()
+            .ok_or(CSError::InvalidRoomConfig)?;
+        // dd_XX_dd_dd
+        let room_name = parts[0];
+        let district_id = parts[1];
+        let floor_id = parts[3];
+        let building_id: &str = &self.config.elcbuis;
+        let area_id: &str = &self.config.elcarea.to_string();
+
+        // 在这里是直接请求学校的网站, 因此不需要 self.client, 也不能使用(TLS 配置不兼容).
+        // 但是需要附上 cookies 数据.
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            format!(
+                "JSESSIONID={}; cookie={}",
+                self.cookies.j_session_id, self.cookies.cookie
+            )
+            .parse()
+            .map_err(|_| CSError::InvalidCookies)?,
+        );
+        headers.insert(
+            "X-CSRF-TOKEN",
+            self.cookies
+                .x_csrf_token
+                .parse()
+                .map_err(|_| CSError::InvalidCookies)?,
+        );
+        let mut districts: Districts = self
+            .client
+            .post(Self::QUERY_DISTRICT_URL)
+            .headers(headers.clone())
+            .form(&[
+                // sysid=1 表示查询电费系统, sysid=2 表示查询水费系统, 后者这里不需要.
+                ("sysid", "1"),
+            ])
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(|e| {
+                error!("invalid district response, maybe permission denied: {e:?}");
+                CSError::EcnuNotLogin
+            })?;
+        let district = districts
+            .districts
+            .into_iter()
+            .find(|d| d.district_id == district_id)
+            .ok_or(CSError::RoomInfoNotFound)?;
+
+        let buildings: Buildings = self
+            .client
+            .post(Self::QUERY_BUILDINGS_URL)
+            .headers(headers.clone())
+            .form(&[("sysid", "1"), ("area", area_id), ("district", district_id)])
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(|e| {
+                error!("invalid building response, maybe permission denied: {e:?}");
+                CSError::EcnuNotLogin
+            })?;
+        let building = buildings
+            .buildings
+            .into_iter()
+            .find(|b| b.building_id == building_id)
+            .ok_or(CSError::RoomInfoNotFound)?;
+
+        let floors: Floors = self
+            .client
+            .post(Self::QUERY_FLOORS_URL)
+            .headers(headers.clone())
+            .form(&[
+                ("sysid", "1"),
+                ("area", area_id),
+                ("district", district_id),
+                ("build", building_id),
+            ])
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(|e| {
+                error!("invalid floors response, maybe permission denied: {e:?}");
+                CSError::EcnuNotLogin
+            })?;
+        let floor = floors
+            .floors
+            .into_iter()
+            .find(|f| f.floor_id == floor_id)
+            .ok_or(CSError::RoomInfoNotFound)?;
+
+        let rooms: Rooms = self
+            .client
+            .post(Self::QUERY_ROOMS_URL)
+            .headers(headers.clone())
+            .form(&[
+                ("sysid", "1"),
+                ("area", area_id),
+                ("district", district_id),
+                ("build", building_id),
+                ("floor", floor_id),
+            ])
+            .send()
+            .await?
+            .json()
+            .await
+            .map_err(|e| {
+                error!("invalid room response, maybe permission denied: {e:?}");
+                CSError::EcnuNotLogin
+            })?;
+        let room = rooms
+            .rooms
+            .into_iter()
+            .find(|f| f.room_name == room_name)
+            .ok_or(CSError::RoomInfoNotFound)?;
+
+        let room_info = RoomInfo {
+            area: districts.areas.pop().ok_or(CSError::RoomInfoNotFound)?,
+            district,
+            building,
+            floor,
+            room,
+        };
+        let mut room_info_cache = self.room_info_cache.lock().await;
+        room_info_cache.insert(self.config.clone(), room_info);
+        Ok(room_info_cache.get(&self.config).unwrap().clone())
     }
 }
 
@@ -753,6 +908,30 @@ async fn clear_room(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSR
     }
 }
 
+async fn get_room(State(state): State<Arc<AppState>>) -> (StatusCode, Json<RoomConfig>) {
+    (
+        StatusCode::OK,
+        Json(state.querier.read().await.config.clone()),
+    )
+}
+
+async fn get_room_info(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<CSResult<RoomInfo>>) {
+    info!("get room info request.");
+    match state.querier.read().await.get_room_info().await {
+        Ok(room_info) => (StatusCode::OK, Json(Ok(room_info))),
+        Err(Error::CS(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(Err(e))),
+        Err(e) => {
+            warn!("getting room info: {e:?}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Err(CSError::ServerRequestError)),
+            )
+        }
+    }
+}
+
 async fn record_loop(state: Arc<AppState>) -> ! {
     enum LoopState {
         Normal,
@@ -853,6 +1032,8 @@ pub async fn run_app() -> anyhow::Result<()> {
         .route("/delete-archive", post(delete_archive))
         .route("/clear-cookies", post(clear_cookies))
         .route("/clear-room", post(clear_room))
+        .route("/get-room", get(get_room))
+        .route("/get-room-info", get(get_room_info))
         .with_state(Arc::clone(&app_state))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024));
     let handle = tokio::spawn(async move { record_loop(app_state).await });

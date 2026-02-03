@@ -42,12 +42,6 @@ pub enum Error {
     Utf8(#[from] FromUtf8Error),
     #[error(transparent)]
     Log(#[from] tracing_appender::rolling::InitError),
-    #[error("invalid room config")]
-    InvalidRoomConfig,
-    #[error("room info not found in the ecnu database")]
-    RoomInfoNotFound,
-    #[error("invalid cookies provided")]
-    InvalidCookies
 }
 
 /// Client-Server error
@@ -88,6 +82,14 @@ pub enum CSError {
     ArchiveNotFound,
     #[error("failed to delete archive")]
     DeletedArchiveFailed,
+    #[error("invalid room config")]
+    InvalidRoomConfig,
+    #[error("room info not found in the ecnu database")]
+    RoomInfoNotFound,
+    #[error("invalid cookies provided")]
+    InvalidCookies,
+    #[error("server failed to send request")]
+    ServerRequestError
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

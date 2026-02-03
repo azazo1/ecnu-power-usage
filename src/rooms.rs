@@ -95,7 +95,7 @@ pub struct Rooms {
 // --- Info ---
 
 /// 从 [`crate::config::RoomConfig`] 中通过上述请求总结出来的信息.
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct RoomInfo {
     pub area: Area,
     pub district: District,

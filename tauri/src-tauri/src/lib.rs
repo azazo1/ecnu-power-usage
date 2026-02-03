@@ -42,7 +42,8 @@ pub async fn run() -> anyhow::Result<()> {
             sys_notify,
             delete_archive,
             clear_room,
-            clear_cookies
+            clear_cookies,
+            get_room_info
         ])
         .setup(|app| Ok(tray::init_tray(app)?))
         .on_window_event(|window, evt| {

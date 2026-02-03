@@ -144,6 +144,48 @@
                             </button>
                         </div>
                     </div>
+
+
+                    <div class="mt-4 pt-3 border-top border-light">
+                        <label class="form-label x-small fw-bold text-secondary mb-2 d-flex align-items-center gap-2">
+                            <i class="bi bi-house-door"></i>
+                            当前房间信息
+                        </label>
+
+                        <div class="p-3 bg-light bg-opacity-50 rounded-3 border border-secondary border-opacity-10">
+                            <div v-if="roomInfo && !roomInfoError" class="d-flex flex-column gap-1">
+                                <div class="d-flex align-items-center gap-2 x-small">
+                                    <span class="text-muted">校区:</span>
+                                    <span class="fw-bold text-dark">{{ roomInfo.area.areaName }}</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 x-small">
+                                    <span class="text-muted">园区:</span>
+                                    <span class="fw-bold text-dark">{{ roomInfo.district.districtName }}</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 x-small">
+                                    <span class="text-muted">楼栋:</span>
+                                    <span class="fw-bold text-dark">{{ roomInfo.building.buiName }}</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 x-small">
+                                    <span class="text-muted">楼层:</span>
+                                    <span class="fw-bold text-dark">{{ roomInfo.floor.floorName }}</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 x-small">
+                                    <span class="text-muted">房间:</span>
+                                    <span class="fw-bold text-dark">{{ roomInfo.room.roomName }}</span>
+                                </div>
+                            </div>
+                            <div v-else class="text-center py-2">
+                                <span class="x-small text-muted text-left d-block">
+                                    <i class="bi bi-exclamation-circle"></i>
+                                    房间信息获取失败, 可能原因: <br>
+                                    &nbsp;&nbsp;&nbsp;&nbsp;1. 没有设置房间信息 <br>
+                                    &nbsp;&nbsp;&nbsp;&nbsp;2. 房间信息无效 <br>
+                                    &nbsp;&nbsp;&nbsp;&nbsp;3. 校园房间信息数据库变更导致信息失效
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="card-footer bg-white border-top border-light p-3 d-flex gap-2 justify-content-end">
@@ -163,7 +205,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { clearCookiesCmd, clearRoomCmd, getConfigCmd, GuiConfig, pickCertCmd, updateConfigCmd as saveConfigCmd } from '../utils/config';
+import { clearCookiesCmd, clearRoomCmd, getConfigCmd, getRoomInfoCmd, GuiConfig, pickCertCmd, RoomInfo, updateConfigCmd as saveConfigCmd } from '../utils/config';
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits<{
@@ -174,6 +216,8 @@ const emit = defineEmits<{
 
 const loading = ref(false);
 const showTls = ref(false);
+const roomInfo = ref<RoomInfo | null>(null);
+const roomInfoError = ref(false);
 
 const config = ref<GuiConfig>({
     serverBase: '',
@@ -188,6 +232,19 @@ const isTlsReady = computed(() => {
         config.value.rootCA?.trim());
 });
 
+// 加载宿舍信息
+async function loadRoomInfo() {
+    try {
+        roomInfo.value = await getRoomInfoCmd();
+        roomInfoError.value = false;
+    } catch (e) {
+        console.error('Failed to load room info', e);
+        roomInfo.value = null;
+        roomInfoError.value = true;
+        // emit('error', '获取宿舍信息失败', String(e));
+    }
+}
+
 // 打开时加载配置
 watch(() => props.show, async (newVal) => {
     if (newVal) {
@@ -196,6 +253,7 @@ watch(() => props.show, async (newVal) => {
             loading.value = true;
             const savedConfig = await getConfigCmd();
             config.value = savedConfig;
+            await loadRoomInfo();
         } catch (e) {
             console.error('Failed to load config', e);
             emit('error', '加载配置失败', String(e));
@@ -250,6 +308,7 @@ async function handleClearRoom() {
     loading.value = true;
     try {
         await clearRoomCmd();
+        await loadRoomInfo();
     } catch (e) {
         emit('error', '清除房间信息失败', String(e));
     } finally {
