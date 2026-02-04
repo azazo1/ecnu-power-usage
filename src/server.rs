@@ -419,7 +419,6 @@ impl Recorder<File> {
 struct AppState {
     querier: RwLock<Querier>,
     recorder: RwLock<Recorder<File>>,
-    data_dir: PathBuf,
     config_dir: PathBuf,
     // 当前宿舍房间的数据保存路径.
     room_dir: RwLock<PathBuf>,
@@ -1027,14 +1026,16 @@ pub async fn run_app() -> anyhow::Result<()> {
         .as_ref()
         .map(|rc| rc.dir())
         // 可以不存在房间配置.
-        .unwrap_or_else(|_| Ok(ROOM_UNKNOWN_DIRNAME.into()))?; // 但是不能是无效的房间配置
+        .unwrap_or_else(|_| Ok(data_dir.join(ROOM_UNKNOWN_DIRNAME)))?; // 但是不能是无效的房间配置
+    fs::create_dir_all(&room_dir)
+        .await
+        .with_context(|| "failed to create room dir")?;
     let recorder = Recorder::load_from_path(room_dir.join(RECORDS_FILENAME))
         .await
         .with_context(|| "failed to initialize recorder")?;
     let app_state = Arc::new(AppState {
         querier: RwLock::new(querier),
         recorder: RwLock::new(recorder),
-        data_dir,
         config_dir,
         room_dir: RwLock::new(room_dir),
     });
