@@ -47,6 +47,10 @@ impl BrowserExecutor {
     }
 
     /// 执行, 并伴随浏览器的自动关闭.
+    ///
+    /// # Errors
+    ///
+    /// see returns of `cb`.
     pub async fn with<T>(
         mut self,
         cb: impl AsyncFnOnce(&mut Self) -> crate::Result<T>,
@@ -56,6 +60,11 @@ impl BrowserExecutor {
         result
     }
 
+    /// 打开 chromium 浏览器.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Chromium`][]: [`Browser::launch`].
     pub async fn launch(config: BrowserConfig) -> crate::Result<Self> {
         let (browser, mut handler) = Browser::launch(config).await?;
         let drop_handle = tokio::spawn(async move {
@@ -76,10 +85,21 @@ impl BrowserExecutor {
         })
     }
 
+    /// 清除浏览器 cookies
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Chromium`][]: [`Browser::clear_cookies`].
     pub async fn clear_browser_cookies(&self) -> crate::Result<()> {
         Ok(self.browser.clear_cookies().await?)
     }
 
+    /// 等待 ECNU 登录, 当前页面需要是 ECNU 单点登录页面.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::BrowserPage`][]: 浏览器页面出现错误提醒 (如小恐龙页面);
+    /// - [`Error::Chromium`][]: see: [`Page::wait_for_navigation`], [`Page::url`].
     async fn wait_for_login(page: &Page) -> crate::Result<()> {
         info!("ecnu checking login state...");
         page.wait_for_navigation().await?;
@@ -99,6 +119,14 @@ impl BrowserExecutor {
     }
 
     /// 使用浏览器交互式进行 ECNU 登录, 获取登录 cookies, 用于上传给服务器.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Cookie`][]: 获取的登录 cookies, 不符合格式要求;
+    /// - [`Error::BrowserPage`][]: 无法在页面中获取 `x_csrf_token`;
+    /// - [`Error::Chromium`][]: see [`Browser::new_page`], [`Browser::get_cookies`];
+    ///
+    /// other see: [`Self::wait_for_login`].
     pub async fn login_cookies(&self) -> crate::Result<Cookies> {
         let page = self.browser.new_page(Self::QUERY_BILL_URL).await?;
         Self::wait_for_login(&page).await?;
@@ -148,9 +176,8 @@ impl BrowserExecutor {
     /// 使用浏览器在网页交互式地选择宿舍信息.
     ///
     /// # Errors
-    /// - [`Error::ChromiumParamBuildingError`][]: 正常情况不应出现.
-    /// - [`Error::BrowserPageError`][]: 选择页面被改造了, 此套代码需要更新以适配.
-    /// - [`Error::ChromiumError`][]: see: [`Browser::new_page`], [`Self::wait_for_login`],
+    /// - [`Error::BrowserPage`][]: 选择页面被改造了, 此套代码需要更新以适配.
+    /// - [`Error::Chromium`][]: see: [`Browser::new_page`], [`Self::wait_for_login`],
     ///   [`Page::evaluate`], [`Page::find_element`].
     pub async fn pick_room(&self) -> crate::Result<RoomConfig> {
         let page = self.browser.new_page(Self::QUERY_BILL_URL).await?;
@@ -177,9 +204,9 @@ impl BrowserExecutor {
             match e {
                 // 这两个分支暂时不清楚是干什么的, 先跳过.
                 chromiumoxide::error::CdpError::Timeout
-                | chromiumoxide::error::CdpError::NotFound => continue,
+                | chromiumoxide::error::CdpError::NotFound => (),
                 // -32000: Could not find node with given id
-                chromiumoxide::error::CdpError::Chrome(ce) if ce.code == -32000 => continue,
+                chromiumoxide::error::CdpError::Chrome(ce) if ce.code == -32000 => (),
                 _ => Err(e)?,
             }
         }
@@ -230,7 +257,7 @@ impl BrowserExecutor {
 }
 
 pub struct Client {
-    /// 服务端地址 e.g. https://localhost:20531
+    /// 服务端地址 e.g. `http://localhost:20531`
     server_base: Url,
     client: reqwest::Client,
 }
@@ -244,6 +271,14 @@ impl Client {
         }
     }
 
+    /// 获取房间当前电量.
+    ///
+    /// # Errors
+    /// - [`Error::Reqwest`][]: see: [`reqwest::RequestBuilder::send`], [`reqwest::Response::json`].
+    /// - [`Error::CS`][]:
+    ///   - [`CSError::RoomConfigMissing`]
+    ///   - [`CSError::EcnuNotLogin`]
+    ///   - [`CSError::QueryDegree`]
     pub async fn get_degree(&self) -> crate::Result<f32> {
         let resp = self
             .client
@@ -254,6 +289,11 @@ impl Client {
         Ok(result?)
     }
 
+    /// 向服务端发送登录 cookies 以便服务端获取房间的电量数据以及查询宿舍信息.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Reqwest`][]: see [`reqwest::RequestBuilder::send`], [`reqwest::Response::error_for_status`].
     pub async fn post_cookies(&self, cookies: &Cookies) -> crate::Result<()> {
         self.client
             .post(self.server_base.join("/post-cookies")?)
