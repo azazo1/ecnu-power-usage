@@ -186,6 +186,19 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="mt-4 pt-3 border-top border-light">
+                        <label class="form-label x-small fw-bold text-secondary mb-2 d-flex align-items-center gap-2">
+                            <i class="bi bi-hand-index"></i>
+                            应用操作
+                        </label>
+
+                        <button type="button" @click="handleQuitApp" :disabled="loading"
+                            class="btn btn-light btn-sm rounded-pill d-inline-flex align-items-center gap-2 py-1 x-small text-secondary btn-quit-hover">
+                            <i class="bi bi-power"></i>
+                            <span>退出应用</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="card-footer bg-white border-top border-light p-3 d-flex gap-2 justify-content-end">
@@ -205,7 +218,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { clearCookiesCmd, clearRoomCmd, getConfigCmd, getRoomInfoCmd, GuiConfig, pickCertCmd, RoomInfo, updateConfigCmd as saveConfigCmd } from '../utils/config';
+import { clearCookiesCmd, clearRoomCmd, getConfigCmd, getRoomInfoCmd, GuiConfig, pickCertCmd, quitAppCmd, RoomInfo, updateConfigCmd } from '../utils/config';
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits<{
@@ -270,7 +283,7 @@ function toggleShowTls() {
 async function saveConfig() {
     loading.value = true;
     try {
-        await saveConfigCmd(config.value);
+        await updateConfigCmd(config.value);
         emit('save', config.value);
         emit('close');
     } catch (e) {
@@ -312,6 +325,16 @@ async function handleClearRoom() {
     } catch (e) {
         emit('error', '清除房间信息失败', String(e));
     } finally {
+        loading.value = false;
+    }
+}
+
+async function handleQuitApp() {
+    loading.value = true;
+    try {
+        await quitAppCmd();
+    } catch (e) {
+        emit('error', '退出应用失败', String(e));
         loading.value = false;
     }
 }
@@ -440,6 +463,31 @@ async function handleClearRoom() {
 
 /* 禁用状态 */
 .btn-action-hover:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* 退出按钮样式 */
+.btn-quit-hover {
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+    background-color: #f8f9fa;
+}
+
+.btn-quit-hover:hover:not(:disabled) {
+    background-color: #fff5f5;
+    color: #dc3545 !important;
+    border-color: #ffcdd2;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(220, 53, 69, 0.1);
+}
+
+.btn-quit-hover:active:not(:disabled) {
+    transform: translateY(0);
+    background-color: #ffe6e6;
+}
+
+.btn-quit-hover:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }

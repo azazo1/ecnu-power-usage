@@ -333,3 +333,8 @@ pub(crate) async fn get_room_info(app_state: State<'_, AppState>) -> Result<Room
         format!("get room info failed: {e}")
     })
 }
+
+#[tauri::command]
+pub(crate) async fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}

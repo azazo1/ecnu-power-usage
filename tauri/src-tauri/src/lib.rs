@@ -43,7 +43,8 @@ pub async fn run() -> anyhow::Result<()> {
             delete_archive,
             clear_room,
             clear_cookies,
-            get_room_info
+            get_room_info,
+            quit_app
         ])
         .setup(|app| Ok(tray::init_tray(app)?))
         .on_window_event(|window, evt| {

@@ -84,3 +84,7 @@ export async function clearCookiesCmd() {
 export async function getRoomInfoCmd(): Promise<RoomInfo> {
     return await invoke("get_room_info");
 }
+
+export async function quitAppCmd() {
+    await invoke("quit_app");
+}
