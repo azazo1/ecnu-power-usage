@@ -1,7 +1,12 @@
 use chrono::{DateTime, FixedOffset};
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, path::Path, slice::Iter};
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+    path::Path,
+    slice::Iter,
+};
 use tokio::{fs::File, io::AsyncRead};
 
 pub mod client;
@@ -82,6 +87,20 @@ impl Cookies {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Records(pub Vec<(DateTime<FixedOffset>, f32)>);
+
+impl Deref for Records {
+    type Target = Vec<(DateTime<FixedOffset>, f32)>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Records {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl Records {
     pub fn sort(&mut self) {

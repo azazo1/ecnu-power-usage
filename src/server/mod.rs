@@ -24,7 +24,7 @@ use rustls::server::WebPkiClientVerifier;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::fs::{self, File};
-use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{error, info, warn};
@@ -33,7 +33,7 @@ use crate::config::{
     RECORDS_FILENAME, ROOM_CONFIG_FILENAME, ROOM_UNKNOWN_DIRNAME, RoomConfig,
     SERVER_CONFIG_FILENAME, ServerConfig, config_dir, data_dir, log_dir,
 };
-use crate::error::{CSError, Error, Result};
+use crate::error::{CSError, Error};
 use crate::rooms::{Buildings, Districts, Floors, RoomInfo, Rooms};
 use crate::{Cookies, Records};
 
@@ -93,7 +93,7 @@ impl Querier {
     /// - [`Error::Reqwest`][]: see: [`reqwest::RequestBuilder::send`].
     /// - [`Error::Ecnu`][]: ECNU 未登录 / 查询接口返回错误信息.
     /// - [`Error::NoDegree`][]: 不应出现此情况, 如果出现了可能是接口返回了错误的数据.
-    async fn query_electricity_degree(&self) -> Result<f32> {
+    async fn query_electricity_degree(&self) -> crate::Result<f32> {
         let payload = json!({
             "sysid": 1,
             "roomNo": self.room_config.room_no.as_str(),
@@ -300,15 +300,30 @@ impl Debug for Recorder {
 /// 在 Recorder<File> 运行时修改对应的 csv 文件可能会破坏结果/无法及时得到响应.
 impl Recorder {
     /// 写入一个时间, 剩余度数对到输出中.
-    async fn record_instant(&mut self, time: DateTime<FixedOffset>, degree: f32) -> Result<()> {
+    async fn record_instant(
+        &mut self,
+        time: DateTime<FixedOffset>,
+        degree: f32,
+    ) -> crate::Result<()> {
         let line = format!("{},{}\n", time.to_rfc3339(), degree);
         self.out.write().await.write_all(line.as_bytes()).await?;
         self.last_degree = Some(degree);
         Ok(())
     }
 
+    async fn record_multiple(&mut self, records: Records) -> crate::Result<()> {
+        let mut out = self.out.write().await;
+        let last_degree = records.last().map(|x| x.1).or(self.last_degree);
+        for (time, degree) in records.0 {
+            let line = format!("{},{}\n", time.to_rfc3339(), degree);
+            out.write_all(line.as_bytes()).await?;
+        }
+        self.last_degree = last_degree;
+        Ok(())
+    }
+
     /// 尝试记录一次电量变化, 只有产生了电量度数的变化才会被记录, 如果被记录了, 那么返回 Ok(true).
-    async fn record(&mut self, degree: f32) -> Result<bool> {
+    async fn record(&mut self, degree: f32) -> crate::Result<bool> {
         let now_time = Local::now().fixed_offset().with_nanosecond(0).unwrap();
         if let Some(last_degree) = self.last_degree
             && last_degree.sub(degree).abs() < 0.01
@@ -321,7 +336,7 @@ impl Recorder {
     }
 
     /// 从可读可写文件中加载.
-    async fn load_from_rw_file(mut file: File) -> Result<Recorder> {
+    async fn load_from_rw_file(mut file: File) -> crate::Result<Recorder> {
         file.seek(SeekFrom::Start(0)).await?;
 
         let mut last_line = None;
@@ -349,7 +364,7 @@ impl Recorder {
     }
 
     /// 从路径中加载, 如果文件不存在, 文件将被创建, 并返回对应没有任何记录 Recorder.
-    async fn load_from_path(records_path: impl AsRef<Path>) -> Result<Recorder> {
+    async fn load_from_path(records_path: impl AsRef<Path>) -> crate::Result<Recorder> {
         let records_path = records_path.as_ref();
         let file = File::options()
             .read(true)
@@ -366,16 +381,17 @@ impl Recorder {
     ///
     /// # Returns
     ///
-    /// (保持在 records.csv 中的记录, 被归档的记录)
+    /// [`ArchiveHandle`],
     ///
     /// # Errors
     ///
     /// - 需要 File 输出对象是 Seekable 和 Readable 的, 不然将会返回 [`Error::Io`].
-    async fn archive(&mut self, time_span: TimeSpan) -> Result<Records> {
+    async fn archive(&mut self, time_span: TimeSpan) -> crate::Result<ArchiveHandle<'_>> {
         let mut out = self.out.write().await;
         out.seek(SeekFrom::Start(0)).await?;
         let records = Records::from_csv(&mut out.deref_mut()).await?;
         out.seek(SeekFrom::End(0)).await?;
+        drop(out);
         let mut archived = Vec::new();
         let mut retained = Vec::new();
         for rec in records.0 {
@@ -385,23 +401,42 @@ impl Recorder {
                 retained.push(rec);
             }
         }
-        out.set_len(0).await?;
-        out.seek(SeekFrom::Start(0)).await?;
-        drop(out);
-        self.last_degree = retained.last().map(|l| l.1);
-        for rec in retained {
-            self.record_instant(rec.0, rec.1).await?;
-        }
-        Ok(Records(archived))
+
+        Ok(ArchiveHandle {
+            recorder: self,
+            retained: Records(retained),
+            archived: Records(archived),
+        })
     }
 
     /// 从文件中读取已经输出的 records.
-    async fn read_records(&self) -> Result<Records> {
+    async fn read_records(&self) -> crate::Result<Records> {
         let mut out = self.out.write().await;
         out.seek(SeekFrom::Start(0)).await?;
         let rst = Records::from_csv(&mut out.deref_mut()).await;
         out.seek(SeekFrom::End(0)).await?;
         rst
+    }
+}
+
+struct ArchiveHandle<'a> {
+    recorder: &'a mut Recorder,
+    /// 保持在 records.csv 中的记录
+    retained: Records,
+    /// 被归档的记录
+    archived: Records,
+}
+
+impl<'a> ArchiveHandle<'a> {
+    /// 确认 archive 操作, 如果不执行此方法, [`Recorder::archive`] 是无任何效果的.
+    async fn commit(self) -> crate::Result<()> {
+        let mut out = self.recorder.out.write().await;
+        out.set_len(0).await?;
+        out.seek(SeekFrom::Start(0)).await?;
+        drop(out);
+        self.recorder.last_degree = None;
+        self.recorder.record_multiple(self.retained).await?;
+        Ok(())
     }
 }
 
@@ -702,7 +737,7 @@ mod tests {
         let archived = recorder.archive(ts).await.unwrap();
         #[rustfmt::skip]
         assert_eq!(
-            archived.0.0,
+            archived.archived.0,
             vec![
                 (offset.with_ymd_and_hms(2026, 1, 24, 15, 39, 32).unwrap().with_nanosecond(132936000).unwrap(), 33.63f32),
                 (offset.with_ymd_and_hms(2026, 1, 24, 17, 6, 32).unwrap().with_nanosecond(132936000).unwrap(), 33.96f32),

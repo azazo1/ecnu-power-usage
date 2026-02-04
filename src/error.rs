@@ -63,7 +63,7 @@ pub enum CSError {
     #[error("listing archives failed")]
     ListArchive,
     #[error("saving archive meta failed")]
-    SaveMeta,
+    SaveArchiveMeta,
     #[error("serializing archive meta failed")]
     SerializeMeta,
     #[error("writing archive file failed")]

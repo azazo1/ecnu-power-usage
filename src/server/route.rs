@@ -1,9 +1,4 @@
-use std::fmt::Debug;
-use std::sync::Arc;
-use axum::{
-    Form, Json,
-    response::IntoResponse,
-};
+use axum::{Form, Json, response::IntoResponse};
 use axum::{
     body::Body,
     extract::State,
@@ -11,12 +6,15 @@ use axum::{
 };
 use chrono::Local;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
+use std::sync::Arc;
 use tokio::fs::{self, File};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info, warn};
 
 use crate::config::{
-    ARCHIVE_DIRNAME, DELETED_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig, is_sanitized_filename,
+    ARCHIVE_DIRNAME, DELETED_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, RoomConfig,
+    is_sanitized_filename,
 };
 use crate::error::{CSError, CSResult, Error};
 use crate::rooms::RoomInfo;
@@ -86,7 +84,9 @@ pub(super) async fn post_cookies(
     StatusCode::OK
 }
 
-pub(super) async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<Records>>) {
+pub(super) async fn get_records(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<CSResult<Records>>) {
     debug!("get records request.");
     match state.recorder.write().await.read_records().await {
         Ok(records) => (StatusCode::OK, Json(Ok(records))),
@@ -100,7 +100,9 @@ pub(super) async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCo
     }
 }
 
-pub(super) async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<f32>>) {
+pub(super) async fn get_degree(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<CSResult<f32>>) {
     debug!("get degree request.");
     let querier = state.querier.read().await;
     if querier.room_config.is_invalid() {
@@ -129,6 +131,8 @@ pub(crate) struct CreateArchiveArgs {
 }
 
 /// 创建 archive, 将符合时间范围的 records 保存到 archives 之中.
+///
+/// fixme: 这里的原子化实践仍然可能由于 async cancellation 而取消, 这点需要解决.
 pub(super) async fn create_archive(
     State(state): State<Arc<AppState>>,
     Json(args): Json<CreateArchiveArgs>,
@@ -150,10 +154,10 @@ pub(super) async fn create_archive(
     }
 
     let mut recorder = state.recorder.write().await;
-    let mut archived = match recorder.archive(time_span).await {
+    let mut handle = match recorder.archive(time_span).await {
         Ok(x) => x,
         Err(e) => {
-            error!("reading records: {e:?}");
+            error!(target: "reading records", "{e:?}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(Err(CSError::ReadRecords)),
@@ -161,8 +165,8 @@ pub(super) async fn create_archive(
         }
     };
 
-    archived.sort();
-    let (start_time, end_time) = match archived.time_span() {
+    handle.archived.sort();
+    let (start_time, end_time) = match handle.archived.time_span() {
         Some(x) => x,
         None => {
             // 如果 records 无法计算出时间跨度, 那么说明其为空.
@@ -193,7 +197,7 @@ pub(super) async fn create_archive(
             while let Some(entry) = match rd.next_entry().await {
                 Ok(x) => x,
                 Err(e) => {
-                    error!("reading archive dir: {e:?}");
+                    error!(target: "reading archive dir", "{e:?}");
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(Err(CSError::ArchiveDir)),
@@ -220,13 +224,13 @@ pub(super) async fn create_archive(
         start_time,
         end_time,
         archive_name,
-        records_num: archived.0.len(),
+        records_num: handle.archived.len(),
     };
 
-    let archived_content = match archived.to_csv().await {
+    let archived_content = match handle.archived.to_csv().await {
         Ok(x) => x,
         Err(e) => {
-            error!("serializing records: {e:?}");
+            error!(target: "serializing records", "{e:?}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(Err(CSError::SerializeRecords)),
@@ -234,18 +238,10 @@ pub(super) async fn create_archive(
         }
     };
 
-    if let Err(e) = fs::write(archive_file, archived_content).await {
-        error!("writing archive file: {e:?}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(Err(CSError::WriteArchive)),
-        );
-    }
-
     let archived_meta_content = match toml::to_string_pretty(&archive_meta) {
         Ok(x) => x,
         Err(e) => {
-            error!("serializing archive meta: {e:?}");
+            error!(target: "serializing archive meta", "{e:?}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(Err(CSError::SerializeMeta)),
@@ -253,14 +249,34 @@ pub(super) async fn create_archive(
         }
     };
 
-    if let Err(e) = fs::write(archive_meta_file, archived_meta_content).await {
-        error!("saving archive meta: {e:?}");
+    // fixme: 这下面的操作仍然有可能被 async cancelled 而导致非原子化, 但是暂时无法使用 tokio::spawn 解决, 因为
+    // state 和 recorder 的生命周期不够长 (handle 需要).
+    if let Err(e) = fs::write(&archive_file, archived_content).await {
+        error!(target: "writing archive file", "{e:?}");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(Err(CSError::SaveMeta)),
+            Json(Err(CSError::WriteArchive)),
         );
     }
 
+    if let Err(e) = fs::write(&archive_meta_file, archived_meta_content).await {
+        error!(target: "saving archive meta", "{e:?}");
+        fs::remove_file(&archive_file).await.ok();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Err(CSError::SaveArchiveMeta)),
+        );
+    }
+
+    if let Err(e) = handle.commit().await {
+        error!(target: "commiting archive", "{e:?}");
+        fs::remove_file(archive_file).await.ok();
+        fs::remove_file(archive_meta_file).await.ok();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Err(CSError::WriteArchive)),
+        );
+    }
     (StatusCode::OK, Json(Ok(archive_meta)))
 }
 
@@ -437,7 +453,9 @@ pub(super) async fn clear_cookies(State(state): State<Arc<AppState>>) -> StatusC
     StatusCode::OK
 }
 
-pub(super) async fn clear_room(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<()>>) {
+pub(super) async fn clear_room(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<CSResult<()>>) {
     info!("clear room request.");
     state
         .querier
