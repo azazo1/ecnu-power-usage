@@ -60,7 +60,7 @@ impl Default for GuiConfig {
 }
 
 fn default_server_base() -> Url {
-    "https://localhost:20531".parse().unwrap()
+    "http://localhost:20531".parse().unwrap()
 }
 
 impl GuiConfig {
@@ -188,7 +188,11 @@ impl AppState {
 }
 
 pub(crate) const CONFIG_FILENAME: &str = "gui-config.toml";
-pub(crate) const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+pub(crate) const PKG_NAME: &str = if cfg!(debug_assertions) {
+    concat!(env!("CARGO_PKG_NAME"), "-debug")
+} else {
+    env!("CARGO_PKG_NAME")
+};
 pub(crate) const ARCHIVE_CACHE_DIRNAME: &str = "archive-cache";
 pub(crate) const TLS_DIRNAME: &str = "tls";
 pub(crate) const CLIENT_CERT_FILENAME: &str = "client.crt";
