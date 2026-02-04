@@ -400,6 +400,7 @@ impl Recorder<File> {
         }
         self.out.set_len(0).await?;
         self.out.seek(SeekFrom::Start(0)).await?;
+        self.last_degree = retained.last().map(|l| l.1);
         for rec in retained {
             self.record_instant(rec.0, rec.1).await?;
         }
