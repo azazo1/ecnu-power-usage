@@ -133,10 +133,24 @@ onMounted(async () => {
     crateVersion.value = await getCrateVersion()
 });
 
-// 加载 Records
+
+let refreshTimer = 0;
+// 加载 Records 和 Archives
 onMounted(() => {
     refreshRecords();
     refreshArchives();
+
+    // 设置定时刷新记录和归档，每 10 秒刷新一次
+    refreshTimer = window.setInterval(() => {
+        refreshRecords();
+        refreshArchives();
+    }, 10000);
+});
+
+onUnmounted(() => {
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+    }
 });
 
 async function refreshRecords() {
