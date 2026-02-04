@@ -11,7 +11,10 @@ use crate::{
     config::RoomConfig,
     error::{CSError, CSResult, Error},
     rooms::RoomInfo,
-    server::{ArchiveMeta, CreateArchiveArgs, DeleteArchiveArgs, DownloadArchiveArgs},
+    server::{
+        ArchiveMeta,
+        route::{CreateArchiveArgs, DeleteArchiveArgs, DownloadArchiveArgs},
+    },
 };
 
 pub struct BrowserExecutor {
