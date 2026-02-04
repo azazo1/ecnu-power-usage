@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::{Cursor, SeekFrom};
-use std::ops::Sub;
+use std::ops::{DerefMut, Sub};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -282,19 +282,13 @@ impl Querier {
     }
 }
 
-struct Recorder<W>
-where
-    W: AsyncWrite + Unpin,
-{
-    out: W,
+struct Recorder {
+    out: RwLock<File>,
     /// 最后一个记录的电量, 保证已经被输出到 out 之中.
     last_degree: Option<f32>,
 }
 
-impl<W> Debug for Recorder<W>
-where
-    W: AsyncWrite + Unpin,
-{
+impl Debug for Recorder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Recorder")
             .field("out", &"...")
@@ -303,14 +297,12 @@ where
     }
 }
 
-impl<W> Recorder<W>
-where
-    W: AsyncWrite + Unpin,
-{
+/// 在 Recorder<File> 运行时修改对应的 csv 文件可能会破坏结果/无法及时得到响应.
+impl Recorder {
     /// 写入一个时间, 剩余度数对到输出中.
     async fn record_instant(&mut self, time: DateTime<FixedOffset>, degree: f32) -> Result<()> {
         let line = format!("{},{}\n", time.to_rfc3339(), degree);
-        self.out.write_all(line.as_bytes()).await?;
+        self.out.write().await.write_all(line.as_bytes()).await?;
         self.last_degree = Some(degree);
         Ok(())
     }
@@ -327,12 +319,9 @@ where
         self.record_instant(now_time, degree).await?;
         Ok(true)
     }
-}
 
-/// 在 Recorder<File> 运行时修改对应的 csv 文件可能会破坏结果/无法及时得到响应.
-impl Recorder<File> {
     /// 从可读可写文件中加载.
-    async fn load_from_rw_file(mut file: File) -> Result<Recorder<File>> {
+    async fn load_from_rw_file(mut file: File) -> Result<Recorder> {
         file.seek(SeekFrom::Start(0)).await?;
 
         let mut last_line = None;
@@ -354,13 +343,13 @@ impl Recorder<File> {
             None
         };
         Ok(Recorder {
-            out: file,
+            out: RwLock::new(file),
             last_degree,
         })
     }
 
     /// 从路径中加载, 如果文件不存在, 文件将被创建, 并返回对应没有任何记录 Recorder.
-    async fn load_from_path(records_path: impl AsRef<Path>) -> Result<Recorder<File>> {
+    async fn load_from_path(records_path: impl AsRef<Path>) -> Result<Recorder> {
         let records_path = records_path.as_ref();
         let file = File::options()
             .read(true)
@@ -373,14 +362,20 @@ impl Recorder<File> {
         Self::load_from_rw_file(file).await
     }
 
-    /// 将符合时间范围的记录摘取出来, 从 records.csv 中去除.
+    /// 将符合时间范围的记录摘取出来, 从 records.csv 中去除, 此函数不会立即操作, 而是先预览 archived 之后的分割结果.
+    ///
+    /// # Returns
+    ///
+    /// (保持在 records.csv 中的记录, 被归档的记录)
     ///
     /// # Errors
     ///
     /// - 需要 File 输出对象是 Seekable 和 Readable 的, 不然将会返回 [`Error::Io`].
     async fn archive(&mut self, time_span: TimeSpan) -> Result<Records> {
-        self.out.seek(SeekFrom::Start(0)).await?;
-        let records = Records::from_csv(&mut self.out).await?;
+        let mut out = self.out.write().await;
+        out.seek(SeekFrom::Start(0)).await?;
+        let records = Records::from_csv(&mut out.deref_mut()).await?;
+        out.seek(SeekFrom::End(0)).await?;
         let mut archived = Vec::new();
         let mut retained = Vec::new();
         for rec in records.0 {
@@ -390,21 +385,22 @@ impl Recorder<File> {
                 retained.push(rec);
             }
         }
-        self.out.set_len(0).await?;
-        self.out.seek(SeekFrom::Start(0)).await?;
+        out.set_len(0).await?;
+        out.seek(SeekFrom::Start(0)).await?;
+        drop(out);
         self.last_degree = retained.last().map(|l| l.1);
         for rec in retained {
             self.record_instant(rec.0, rec.1).await?;
         }
-        self.out.seek(SeekFrom::End(0)).await?;
         Ok(Records(archived))
     }
 
     /// 从文件中读取已经输出的 records.
-    async fn read_records(&mut self) -> Result<Records> {
-        self.out.seek(SeekFrom::Start(0)).await?;
-        let rst = Records::from_csv(&mut self.out).await;
-        self.out.seek(SeekFrom::End(0)).await?;
+    async fn read_records(&self) -> Result<Records> {
+        let mut out = self.out.write().await;
+        out.seek(SeekFrom::Start(0)).await?;
+        let rst = Records::from_csv(&mut out.deref_mut()).await;
+        out.seek(SeekFrom::End(0)).await?;
         rst
     }
 }
@@ -412,7 +408,7 @@ impl Recorder<File> {
 #[derive(Debug)]
 struct AppState {
     querier: RwLock<Querier>,
-    recorder: RwLock<Recorder<File>>,
+    recorder: RwLock<Recorder>,
     config_dir: PathBuf,
     // 当前宿舍房间的数据保存路径.
     room_dir: RwLock<PathBuf>,
@@ -706,7 +702,7 @@ mod tests {
         let archived = recorder.archive(ts).await.unwrap();
         #[rustfmt::skip]
         assert_eq!(
-            archived.0,
+            archived.0.0,
             vec![
                 (offset.with_ymd_and_hms(2026, 1, 24, 15, 39, 32).unwrap().with_nanosecond(132936000).unwrap(), 33.63f32),
                 (offset.with_ymd_and_hms(2026, 1, 24, 17, 6, 32).unwrap().with_nanosecond(132936000).unwrap(), 33.96f32),
