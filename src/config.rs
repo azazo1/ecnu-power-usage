@@ -1,10 +1,18 @@
-use crate::error::Error;
+use crate::{CSError, error::Error};
 use serde::{Deserialize, Serialize};
 use std::{
+    io,
     net::SocketAddr,
     path::{Path, PathBuf},
 };
 use tokio::fs;
+
+pub(crate) fn is_sanitized_filename(name: &str) -> bool {
+    let archive_name = Path::new(name).file_name().and_then(|s| s.to_str());
+    sanitize_filename::is_sanitized(name)
+        && archive_name.is_some_and(|f| f == name)
+        && name.find(['/', '\\']).is_none()
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct ServerTlsConfig {
@@ -74,6 +82,17 @@ impl RoomConfig {
         self.elcarea < 0 || self.room_no.is_empty() || self.elcbuis.is_empty()
     }
 
+    pub(crate) fn dir(&self) -> crate::Result<PathBuf> {
+        let room_dir = data_dir()?.join(ROOMS_DIRNAME);
+        let room_no_dir = room_dir.join(match self.room_no.as_str() {
+            s if s.trim().is_empty() => ROOM_UNKNOWN_DIRNAME,
+            s if !is_sanitized_filename(s) => Err(CSError::InvalidRoomConfig)?,
+            s => s,
+        });
+        std::fs::create_dir_all(&room_no_dir)?;
+        Ok(room_no_dir)
+    }
+
     pub async fn from_toml_file(room_config_file: impl AsRef<Path>) -> crate::Result<Self> {
         let config_path = room_config_file.as_ref();
         let room_config: Self = toml::from_str(
@@ -90,10 +109,40 @@ impl RoomConfig {
     }
 }
 
-pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
-pub const RECORDS_FILENAME: &str = "records.csv";
-pub const ARCHIVE_DIRNAME: &str = "archives";
-pub const ROOM_CONFIG_FILENAME: &str = "room.toml";
-pub const LOG_DIRNAME: &str = "logs";
+pub(crate) fn data_dir() -> io::Result<PathBuf> {
+    let default_data_dir = shellexpand::tilde("~/.local/share");
+    let data_dir = dirs_next::data_dir()
+        .unwrap_or(default_data_dir.to_string().into())
+        .join(PKG_NAME);
+    std::fs::create_dir_all(&data_dir)?;
+    Ok(data_dir)
+}
+
+pub(crate) fn config_dir() -> io::Result<PathBuf> {
+    let default_config_dir = shellexpand::tilde("~/.config");
+    let config_dir = dirs_next::config_dir()
+        .unwrap_or(default_config_dir.to_string().into())
+        .join(PKG_NAME);
+    std::fs::create_dir_all(&config_dir)?;
+    Ok(config_dir)
+}
+
+pub(crate) fn log_dir() -> io::Result<PathBuf> {
+    let log_dir = data_dir()?.join(LOG_DIRNAME);
+    std::fs::create_dir_all(&log_dir)?;
+    Ok(log_dir)
+}
+
+pub(crate) const PKG_NAME: &str = if cfg!(debug_assertions) {
+    concat!(env!("CARGO_PKG_NAME"), "-debug")
+} else {
+    env!("CARGO_PKG_NAME")
+};
+pub(crate) const RECORDS_FILENAME: &str = "records.csv";
+pub(crate) const ARCHIVE_DIRNAME: &str = "archives";
+pub(crate) const ROOM_CONFIG_FILENAME: &str = "room.toml";
+pub(crate) const LOG_DIRNAME: &str = "logs";
 pub(crate) const SERVER_CONFIG_FILENAME: &str = "server.toml";
 pub(crate) const DELETED_DIRNAME: &str = "deleted";
+pub(crate) const ROOMS_DIRNAME: &str = "rooms";
+pub(crate) const ROOM_UNKNOWN_DIRNAME: &str = "unknown";

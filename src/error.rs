@@ -58,6 +58,8 @@ pub enum CSError {
     EmptyArchive,
     #[error("archive dir is not exist or cannot be read")]
     ArchiveDir,
+    #[error("room dir is not exist or cannot be read")]
+    RoomDir,
     #[error("listing archives failed")]
     ListArchive,
     #[error("saving archive meta failed")]
@@ -89,7 +91,7 @@ pub enum CSError {
     #[error("invalid cookies provided")]
     InvalidCookies,
     #[error("server failed to send request")]
-    ServerRequestError
+    ServerRequestError,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

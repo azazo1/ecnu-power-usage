@@ -36,8 +36,9 @@ use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info, warn};
 
 use crate::config::{
-    ARCHIVE_DIRNAME, DELETED_DIRNAME, LOG_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME,
-    RoomConfig, SERVER_CONFIG_FILENAME, ServerConfig,
+    ARCHIVE_DIRNAME, DELETED_DIRNAME, RECORDS_FILENAME, ROOM_CONFIG_FILENAME, ROOM_UNKNOWN_DIRNAME,
+    RoomConfig, SERVER_CONFIG_FILENAME, ServerConfig, config_dir, data_dir, is_sanitized_filename,
+    log_dir,
 };
 use crate::error::{CSError, CSResult, Error, Result};
 use crate::rooms::{Buildings, Districts, Floors, RoomInfo, Rooms};
@@ -58,7 +59,7 @@ struct QueryResponse {
 /// 用于指定宿舍电量查询.
 #[derive(Default)]
 struct Querier {
-    config: RoomConfig,
+    room_config: RoomConfig,
     cookies: Cookies,
     client: Client,
     room_info_cache: Mutex<HashMap<RoomConfig, RoomInfo>>,
@@ -67,7 +68,7 @@ struct Querier {
 impl Debug for Querier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Querier")
-            .field("config", &self.config)
+            .field("room_config", &self.room_config)
             .field("cookies", &self.cookies)
             .field("client", &self.client)
             .finish()
@@ -78,16 +79,14 @@ impl Querier {
     #[must_use]
     fn new(config: RoomConfig) -> Querier {
         Querier {
-            config,
-            cookies: Default::default(),
-            client: Default::default(),
-            room_info_cache: Default::default(),
+            room_config: config,
+            ..Default::default()
         }
     }
 
     #[inline]
     fn set_room_config(&mut self, config: RoomConfig) {
-        self.config = config;
+        self.room_config = config;
     }
 
     /// 重新设置有效的 cookies.
@@ -103,9 +102,9 @@ impl Querier {
     async fn query_electricity_degree(&self) -> Result<f32> {
         let payload = json!({
             "sysid": 1,
-            "roomNo": self.config.room_no.as_str(),
-            "elcarea": self.config.elcarea,
-            "elcbuis": self.config.elcbuis.as_str(),
+            "roomNo": self.room_config.room_no.as_str(),
+            "elcarea": self.room_config.elcarea,
+            "elcbuis": self.room_config.elcbuis.as_str(),
         });
         let resp = self
             .client
@@ -121,7 +120,6 @@ impl Querier {
                 ),
             )
             .header("X-CSRF-TOKEN", &self.cookies.x_csrf_token)
-            // todo 解决 cookies 登录状态问题
             .form(&payload)
             .send()
             .await?;
@@ -149,13 +147,13 @@ impl Querier {
 
     /// 获取学校宿舍的信息 (宿舍代码及其对应的可视值).
     pub async fn get_room_info(&self) -> crate::Result<RoomInfo> {
-        if !self.config.is_invalid()
-            && let Some(room_info) = self.room_info_cache.lock().await.get(&self.config)
+        if !self.room_config.is_invalid()
+            && let Some(room_info) = self.room_info_cache.lock().await.get(&self.room_config)
         {
             return Ok(room_info.clone());
         }
         let parts: [&str; 4] = *self
-            .config
+            .room_config
             .room_no
             .splitn(4, '_')
             .collect::<Vec<&str>>()
@@ -165,8 +163,8 @@ impl Querier {
         let room_name = parts[0];
         let district_id = parts[1];
         let floor_id = parts[3];
-        let building_id: &str = &self.config.elcbuis;
-        let area_id: &str = &self.config.elcarea.to_string();
+        let building_id: &str = &self.room_config.elcbuis;
+        let area_id: &str = &self.room_config.elcarea.to_string();
 
         // 在这里是直接请求学校的网站, 因此不需要 self.client, 也不能使用(TLS 配置不兼容).
         // 但是需要附上 cookies 数据.
@@ -285,8 +283,8 @@ impl Querier {
             room,
         };
         let mut room_info_cache = self.room_info_cache.lock().await;
-        room_info_cache.insert(self.config.clone(), room_info);
-        Ok(room_info_cache.get(&self.config).unwrap().clone())
+        room_info_cache.insert(self.room_config.clone(), room_info);
+        Ok(room_info_cache.get(&self.room_config).unwrap().clone())
     }
 }
 
@@ -423,13 +421,8 @@ struct AppState {
     recorder: RwLock<Recorder<File>>,
     data_dir: PathBuf,
     config_dir: PathBuf,
-}
-
-fn is_valid_archive_name(name: &str) -> bool {
-    let archive_name = Path::new(name).file_name().and_then(|s| s.to_str());
-    sanitize_filename::is_sanitized(name)
-        && archive_name.is_some_and(|f| f == name)
-        && name.find(['/', '\\']).is_none()
+    // 当前宿舍房间的数据保存路径.
+    room_dir: RwLock<PathBuf>,
 }
 
 async fn post_room(
@@ -437,20 +430,52 @@ async fn post_room(
     Json(room_config): Json<RoomConfig>,
 ) -> (StatusCode, Json<CSResult<()>>) {
     info!("post room request.");
+    if !is_sanitized_filename(&room_config.room_no) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(Err(CSError::InvalidRoomConfig)),
+        );
+    }
+    let room_dir = match room_config.dir() {
+        Ok(x) => x,
+        Err(e) => {
+            error!(target: "creating room dir", "{e:?}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Err(CSError::RoomDir)),
+            );
+        }
+    };
+    let recorder = match Recorder::load_from_path(room_dir.join(RECORDS_FILENAME)).await {
+        Ok(x) => x,
+        Err(Error::CS(e)) => return (StatusCode::BAD_REQUEST, Json(Err(e))),
+        Err(e) => {
+            error!(target: "loading recorder", "{e:?}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Err(CSError::ReadRecords)),
+            );
+        }
+    };
+    if let Err(e) = room_config
+        .save_to_file(state.config_dir.join(ROOM_CONFIG_FILENAME))
+        .await
+    {
+        error!(target: "saving room config",  "{e:?}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Err(CSError::SaveRoomConfig)),
+        );
+    }
+    // 原子化操作, 推迟到这里赋值.
+    *state.room_dir.write().await = room_dir;
+    *state.recorder.write().await = recorder;
     state
         .querier
         .write()
         .await
         .set_room_config(room_config.clone());
-    if let Err(e) = room_config
-        .save_to_file(state.config_dir.join(ROOM_CONFIG_FILENAME))
-        .await
-    {
-        error!("saving room config: {e:?}");
-        (StatusCode::OK, Json(Err(CSError::SaveRoomConfig)))
-    } else {
-        (StatusCode::OK, Json(Ok(())))
-    }
+    (StatusCode::OK, Json(Ok(())))
 }
 
 async fn post_cookies(
@@ -479,7 +504,7 @@ async fn get_records(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CS
 async fn get_degree(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSResult<f32>>) {
     debug!("get degree request.");
     let querier = state.querier.read().await;
-    if querier.config.is_invalid() {
+    if querier.room_config.is_invalid() {
         return (StatusCode::OK, Json(Err(CSError::RoomConfigMissing)));
     }
     match querier.query_electricity_degree().await {
@@ -598,6 +623,15 @@ async fn create_archive(
         archive_name,
     } = args;
 
+    if let Some(archive_name) = archive_name.as_ref()
+        && !is_sanitized_filename(archive_name)
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(Err(CSError::InvalidArchiveName)),
+        );
+    }
+
     let mut recorder = state.recorder.write().await;
     let mut archived = match recorder.archive(time_span).await {
         Ok(x) => x,
@@ -620,7 +654,7 @@ async fn create_archive(
     };
 
     let archive_name = match archive_name {
-        Some(x) if is_valid_archive_name(&x) => x,
+        Some(x) => x,
         None => {
             format!(
                 "{}-{}-by-{}",
@@ -629,15 +663,9 @@ async fn create_archive(
                 Local::now().format("%Y%d%m_%H%M%S")
             )
         }
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(Err(CSError::InvalidArchiveName)),
-            );
-        }
     };
 
-    let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+    let archive_dir = state.room_dir.read().await.join(ARCHIVE_DIRNAME);
     let archive_file = archive_dir.join(format!("{}.csv", archive_name));
     let archive_meta_file = archive_dir.join(format!("{}.toml", archive_name));
 
@@ -731,9 +759,9 @@ async fn download_archive(
 ) -> Response<Body> {
     info!("download archive request: {}", args.name);
 
-    let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+    let archive_dir = state.room_dir.read().await.join(ARCHIVE_DIRNAME);
 
-    let archive_name = if is_valid_archive_name(&args.name) {
+    let archive_name = if is_sanitized_filename(&args.name) {
         args.name
     } else {
         return (StatusCode::BAD_REQUEST, Json(CSError::InvalidArchiveName)).into_response();
@@ -763,7 +791,7 @@ async fn list_archives(
 ) -> (StatusCode, Json<CSResult<Vec<ArchiveMeta>>>) {
     info!("list archives request.");
 
-    let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
+    let archive_dir = state.room_dir.read().await.join(ARCHIVE_DIRNAME);
     fs::create_dir_all(&archive_dir).await.ok();
     let mut rd = match fs::read_dir(&archive_dir).await {
         Ok(x) => x,
@@ -820,14 +848,15 @@ async fn delete_archive(
 ) -> (StatusCode, Json<CSResult<()>>) {
     info!("delete archive request: {args:#?}");
     let DeleteArchiveArgs { name: archive_name } = args;
-    if !is_valid_archive_name(&archive_name) {
+    if !is_sanitized_filename(&archive_name) {
         return (
             StatusCode::BAD_REQUEST,
             Json(Err(CSError::InvalidArchiveName)),
         );
     }
-    let archive_dir = state.data_dir.join(ARCHIVE_DIRNAME);
-    let deleted_dir = state.data_dir.join(DELETED_DIRNAME);
+    let room_dir = state.room_dir.read().await.clone();
+    let archive_dir = room_dir.join(ARCHIVE_DIRNAME);
+    let deleted_dir = room_dir.join(DELETED_DIRNAME);
     let archive_file = archive_dir.join(format!("{}.csv", archive_name));
     let archive_meta_file = archive_dir.join(format!("{}.toml", archive_name));
 
@@ -912,7 +941,7 @@ async fn clear_room(State(state): State<Arc<AppState>>) -> (StatusCode, Json<CSR
 async fn get_room(State(state): State<Arc<AppState>>) -> (StatusCode, Json<RoomConfig>) {
     (
         StatusCode::OK,
-        Json(state.querier.read().await.config.clone()),
+        Json(state.querier.read().await.room_config.clone()),
     )
 }
 
@@ -970,23 +999,9 @@ async fn record_loop(state: Arc<AppState>) -> ! {
 
 /// 创建并启动服务.
 pub async fn run_app() -> anyhow::Result<()> {
-    const PKG_NAME: &str = env!("CARGO_PKG_NAME");
-    let default_data_dir = shellexpand::tilde("~/.local/share");
-    let default_config_dir = shellexpand::tilde("~/.config");
-    let data_dir = dirs_next::data_dir()
-        .unwrap_or(default_data_dir.to_string().into())
-        .join(PKG_NAME);
-    let config_dir = dirs_next::config_dir()
-        .unwrap_or(default_config_dir.to_string().into())
-        .join(PKG_NAME);
-    let log_dir = data_dir.join(LOG_DIRNAME);
-
-    fs::create_dir_all(&data_dir)
-        .await
-        .with_context(|| data_dir.to_string_lossy().to_string())?;
-    fs::create_dir_all(&config_dir)
-        .await
-        .with_context(|| config_dir.to_string_lossy().to_string())?;
+    let data_dir = data_dir().with_context(|| "failed to access data dir")?;
+    let config_dir = config_dir().with_context(|| "failed to access config dir")?;
+    let log_dir = log_dir().with_context(|| "failed to access log dir")?;
 
     let _guard = log::init(&log_dir)
         .await
@@ -1003,24 +1018,25 @@ pub async fn run_app() -> anyhow::Result<()> {
     let server_config = ServerConfig::from_toml_file(&server_config_file, true).await?;
     info!("server config: {server_config:#?}");
 
+    let querier = if let Ok(room_config) = room_config.as_ref() {
+        Querier::new(room_config.clone())
+    } else {
+        Querier::default()
+    };
+    let room_dir = room_config
+        .as_ref()
+        .map(|rc| rc.dir())
+        // 可以不存在房间配置.
+        .unwrap_or_else(|_| Ok(ROOM_UNKNOWN_DIRNAME.into()))?; // 但是不能是无效的房间配置
+    let recorder = Recorder::load_from_path(room_dir.join(RECORDS_FILENAME))
+        .await
+        .with_context(|| "failed to initialize recorder")?;
     let app_state = Arc::new(AppState {
-        querier: RwLock::new(if let Ok(room_config) = room_config {
-            Querier::new(room_config)
-        } else {
-            Querier::default()
-        }),
-        recorder: RwLock::new(
-            Recorder::load_from_path(data_dir.join(RECORDS_FILENAME))
-                .await
-                .with_context(|| {
-                    data_dir
-                        .join(RECORDS_FILENAME)
-                        .to_string_lossy()
-                        .to_string()
-                })?,
-        ),
+        querier: RwLock::new(querier),
+        recorder: RwLock::new(recorder),
         data_dir,
         config_dir,
+        room_dir: RwLock::new(room_dir),
     });
     let router = Router::new()
         .route("/post-room", post(post_room))

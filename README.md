@@ -30,6 +30,8 @@ cargo install --git https://github.com/azazo1/ecnu-power-usage.git ecnu-power-us
 | macOS   | `$HOME`/Library/Application Support/ecnu-power-usage                    | /Users/Alice/Library/Application Support/ecnu-power-usage |
 | Windows | `{FOLDERID_RoamingAppData}`\ecnu-power-usage                            | C:\Users\Alice\AppData\Roaming\ecnu-power-usage           |
 
+- 注: 如果使用 dev profile 编译运行, 则配置文件夹的名称会有后缀 `-debug`.
+
 在这些目录下的 `server.toml` 文件即为配置文件, 配置文件编写示例:
 
 ```toml
