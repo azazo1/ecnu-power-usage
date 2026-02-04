@@ -195,33 +195,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { use } from "echarts/core";
-import { CanvasRenderer } from "echarts/renderers";
-import { LineChart } from "echarts/charts";
-import {
-    GridComponent,
-    TooltipComponent,
-    DataZoomComponent,
-    MarkLineComponent,
-    LegendComponent,
-} from "echarts/components";
-import VChart from "vue-echarts";
+import { ref, computed, defineAsyncComponent } from "vue";
+import { VChart } from "../utils/echarts";
 import { format, differenceInMinutes } from "date-fns";
 import type { ElectricityRecord } from "../utils/records";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import CreateArchiveDialog from "./CreateArchiveDialog.vue";
 
-// 注册 ECharts 组件
-use([
-    CanvasRenderer,
-    LineChart,
-    GridComponent,
-    TooltipComponent,
-    DataZoomComponent,
-    MarkLineComponent,
-    LegendComponent,
-]);
+// 懒加载 CreateArchiveDialog 组件
+const CreateArchiveDialog = defineAsyncComponent(() => import("./CreateArchiveDialog.vue"));
 
 const props = defineProps<{
     data: ElectricityRecord[];

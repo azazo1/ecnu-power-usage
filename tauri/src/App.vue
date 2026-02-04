@@ -106,18 +106,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
-import DataVisualizer from "./components/DataVisualizer.vue";
+import { ref, onMounted, onUnmounted, defineAsyncComponent } from "vue";
 import { getRecords, type ElectricityRecord } from "./utils/records";
 import { invoke } from "@tauri-apps/api/core";
 import { Archive, ArchiveMeta, createArchiveCmd, deleteArchiveCmd, downloadArchiveCmd, listArchivesCmd } from "./utils/archive";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import ArchiveList from "./components/ArchiveList.vue";
-import HealthModal from "./components/HealthModal.vue";
 import { healthCheckCmd, HealthStatus } from "./utils/health";
-import ConfigModal from "./components/ConfigModal.vue";
 import { GuiConfig } from "./utils/config";
 import { sysNotify } from "./utils/notify";
+
+// 使用懒加载组件
+const DataVisualizer = defineAsyncComponent(() => import("./components/DataVisualizer.vue"));
+const ArchiveList = defineAsyncComponent(() => import("./components/ArchiveList.vue"));
+const HealthModal = defineAsyncComponent(() => import("./components/HealthModal.vue"));
+const ConfigModal = defineAsyncComponent(() => import("./components/ConfigModal.vue"));
 
 // --- State ---
 const currentTab = ref<"records" | "archives">("records");
