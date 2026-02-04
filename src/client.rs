@@ -350,8 +350,8 @@ impl Client {
             .client
             .post(self.server_base.join("/create-archive")?)
             .json(&CreateArchiveArgs {
-                archive_name,
                 time_span,
+                archive_name,
             })
             .send()
             .await?;
@@ -461,6 +461,7 @@ pub struct GuardClient {
 }
 
 impl GuardClient {
+    #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn new(server_base: Url) -> Self {
         Self {

@@ -7,6 +7,7 @@ use axum::{
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::fs::{self, File};
 use tokio_util::io::ReaderStream;
@@ -80,7 +81,7 @@ pub(super) async fn post_cookies(
     Json(cookies): Json<Cookies>,
 ) -> StatusCode {
     info!("post cookies request.");
-    state.querier.write().await.refresh(cookies);
+    state.querier.write().await.refresh(&cookies);
     StatusCode::OK
 }
 
@@ -133,6 +134,7 @@ pub(crate) struct CreateArchiveArgs {
 /// 创建 archive, 将符合时间范围的 records 保存到 archives 之中.
 ///
 /// fixme: 这里的原子化实践仍然可能由于 async cancellation 而取消, 这点需要解决.
+#[allow(clippy::too_many_lines)]
 pub(super) async fn create_archive(
     State(state): State<Arc<AppState>>,
     Json(args): Json<CreateArchiveArgs>,
@@ -166,12 +168,9 @@ pub(super) async fn create_archive(
     };
 
     handle.archived.sort();
-    let (start_time, end_time) = match handle.archived.time_span() {
-        Some(x) => x,
-        None => {
-            // 如果 records 无法计算出时间跨度, 那么说明其为空.
-            return (StatusCode::OK, Json(Err(CSError::EmptyArchive)));
-        }
+    let Some((start_time, end_time)) = handle.archived.time_span() else {
+        // 如果 records 无法计算出时间跨度, 那么说明其为空.
+        return (StatusCode::OK, Json(Err(CSError::EmptyArchive)));
     };
 
     let archive_name = match archive_name {
@@ -187,8 +186,8 @@ pub(super) async fn create_archive(
     };
 
     let archive_dir = state.room_dir.read().await.join(ARCHIVE_DIRNAME);
-    let archive_file = archive_dir.join(format!("{}.csv", archive_name));
-    let archive_meta_file = archive_dir.join(format!("{}.toml", archive_name));
+    let archive_file = archive_dir.join(format!("{archive_name}.csv"));
+    let archive_meta_file = archive_dir.join(format!("{archive_name}.toml"));
 
     fs::create_dir_all(&archive_dir).await.ok(); // 如果失败了会在下面报错;
 
@@ -285,7 +284,7 @@ pub(crate) struct DownloadArchiveArgs {
     pub(crate) name: String,
 }
 
-/// 这里的 Form 需要使用 reqwest .query() 的方式给入, 而不是 .form().
+/// 这里的 Form 需要使用 reqwest `.query()` 的方式给入, 而不是 `.form()`.
 pub(super) async fn download_archive(
     State(state): State<Arc<AppState>>,
     Form(args): Form<DownloadArchiveArgs>,
@@ -300,7 +299,7 @@ pub(super) async fn download_archive(
         return (StatusCode::BAD_REQUEST, Json(CSError::InvalidArchiveName)).into_response();
     };
 
-    match File::open(archive_dir.join(format!("{}.csv", archive_name))).await {
+    match File::open(archive_dir.join(format!("{archive_name}.csv"))).await {
         Ok(file) => {
             let stream = ReaderStream::new(file);
             let body = Body::from_stream(stream);
@@ -309,7 +308,7 @@ pub(super) async fn download_archive(
                 .header("Content-Type", "text/csv")
                 .header(
                     "Content-Disposition",
-                    format!("attachment; filename=\"{}\"", archive_name),
+                    format!("attachment; filename=\"{archive_name}\""),
                 )
                 .body(body)
                 .unwrap()
@@ -326,14 +325,11 @@ pub(super) async fn list_archives(
 
     let archive_dir = state.room_dir.read().await.join(ARCHIVE_DIRNAME);
     fs::create_dir_all(&archive_dir).await.ok();
-    let mut rd = match fs::read_dir(&archive_dir).await {
-        Ok(x) => x,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Err(CSError::ArchiveDir)),
-            );
-        }
+    let Ok(mut rd) = fs::read_dir(&archive_dir).await else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(Err(CSError::ArchiveDir)),
+        );
     };
     let mut archive_metas = Vec::new();
     while let Some(entry) = match rd.next_entry().await {
@@ -349,19 +345,21 @@ pub(super) async fn list_archives(
         let Some(meta_filename) = entry
             .file_name()
             .to_str()
-            .filter(|s| s.ends_with(".toml"))
+            .filter(|s| {
+                Path::new(s)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(".toml"))
+            })
             .map(|s: &str| s.to_string())
         else {
             continue;
         };
         let meta_file = archive_dir.join(&meta_filename);
-        let meta_content = match fs::read(meta_file).await {
-            Ok(x) => x,
-            Err(_) => continue,
+        let Ok(meta_content) = fs::read(meta_file).await else {
+            continue;
         };
-        let meta: ArchiveMeta = match toml::from_slice(&meta_content) {
-            Ok(x) => x,
-            Err(_) => continue,
+        let Ok(meta) = toml::from_slice::<ArchiveMeta>(&meta_content) else {
+            continue;
         };
         archive_metas.push(meta);
     }
@@ -390,8 +388,8 @@ pub(super) async fn delete_archive(
     let room_dir = state.room_dir.read().await.clone();
     let archive_dir = room_dir.join(ARCHIVE_DIRNAME);
     let deleted_dir = room_dir.join(DELETED_DIRNAME);
-    let archive_file = archive_dir.join(format!("{}.csv", archive_name));
-    let archive_meta_file = archive_dir.join(format!("{}.toml", archive_name));
+    let archive_file = archive_dir.join(format!("{archive_name}.csv"));
+    let archive_meta_file = archive_dir.join(format!("{archive_name}.toml"));
 
     if !archive_meta_file.exists() {
         return (StatusCode::NOT_FOUND, Json(Err(CSError::ArchiveNotFound)));
@@ -449,7 +447,7 @@ pub(super) async fn delete_archive(
 
 pub(super) async fn clear_cookies(State(state): State<Arc<AppState>>) -> StatusCode {
     info!("clear cookies request.");
-    state.querier.write().await.refresh(Cookies::empty());
+    state.querier.write().await.refresh(&Cookies::empty());
     StatusCode::OK
 }
 

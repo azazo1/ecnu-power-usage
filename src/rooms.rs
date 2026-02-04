@@ -43,7 +43,7 @@ pub struct Room {
 
 /// 查询所有地区.
 ///
-/// - url: https://epay.ecnu.edu.cn/epaycas/electric/queryelectricarea
+/// - url: <https://epay.ecnu.edu.cn/epaycas/electric/queryelectricarea>
 /// - method: post
 /// - payload(form): sysid=1
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
@@ -63,7 +63,7 @@ pub struct Districts {
 
 /// 查询地区所有建筑
 ///
-/// - url: https://epay.ecnu.edu.cn/epaycas/electric/queryelectricbuis
+/// - url: <https://epay.ecnu.edu.cn/epaycas/electric/queryelectricbuis>
 /// - method: post
 /// - payload(form): sysid=1&area=___&district=___
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
@@ -74,7 +74,7 @@ pub struct Buildings {
 
 /// 查询建筑的所有楼层
 ///
-/// - url: https://epay.ecnu.edu.cn/epaycas/electric/queryelectricfloors
+/// - url: <https://epay.ecnu.edu.cn/epaycas/electric/queryelectricfloors>
 /// - method: post
 /// - payload(form): sysid=1&area=___&district=__&build=___
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
@@ -84,7 +84,7 @@ pub struct Floors {
 
 /// 查询建筑内所有房间.
 ///
-/// - url: https://epay.ecnu.edu.cn/epaycas/electric/queryelectricrooms
+/// - url: <https://epay.ecnu.edu.cn/epaycas/electric/queryelectricrooms>
 /// - method: post
 /// - payload(form): sysid=1&area=___&district=___&build=___&floor=___
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]

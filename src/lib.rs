@@ -5,7 +5,6 @@ use std::{
     fmt::Debug,
     ops::{Deref, DerefMut},
     path::Path,
-    slice::Iter,
 };
 use tokio::{fs::File, io::AsyncRead};
 
@@ -63,12 +62,16 @@ impl Debug for Cookies {
 }
 
 impl Cookies {
+    #[inline]
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             ..Default::default()
         }
     }
 
+    #[inline]
+    #[must_use]
     fn cookie_sanitize(content: &str) -> String {
         content
             .chars()
@@ -76,7 +79,9 @@ impl Cookies {
             .collect()
     }
 
-    pub fn sanitize(&self) -> Self {
+    #[inline]
+    #[must_use]
+    pub fn sanitized(&self) -> Self {
         Cookies {
             cookie: Cookies::cookie_sanitize(&self.cookie),
             j_session_id: Cookies::cookie_sanitize(&self.j_session_id),
@@ -108,6 +113,8 @@ impl Records {
     }
 
     /// 返回记录中最早和最晚的时间点.
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn time_span(&self) -> Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
         if self.0.is_empty() {
             None
@@ -119,10 +126,7 @@ impl Records {
         }
     }
 
-    pub fn iter(&self) -> Iter<'_, (DateTime<FixedOffset>, f32)> {
-        self.0.iter()
-    }
-
+    #[allow(clippy::missing_panics_doc)]
     pub async fn to_csv(&self) -> Result<String> {
         let mut ser = csv_async::AsyncWriterBuilder::new().create_serializer(vec![]);
         for rec in &self.0 {

@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::{Cursor, SeekFrom};
-use std::ops::{DerefMut, Sub};
+use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -51,22 +51,12 @@ struct QueryResponse {
 }
 
 /// 用于指定宿舍电量查询.
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Querier {
     room_config: RoomConfig,
     cookies: Cookies,
     client: Client,
     room_info_cache: Mutex<HashMap<RoomConfig, RoomInfo>>,
-}
-
-impl Debug for Querier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Querier")
-            .field("room_config", &self.room_config)
-            .field("cookies", &self.cookies)
-            .field("client", &self.client)
-            .finish()
-    }
 }
 
 impl Querier {
@@ -84,8 +74,8 @@ impl Querier {
     }
 
     /// 重新设置有效的 cookies.
-    fn refresh(&mut self, cookies: Cookies) {
-        self.cookies = cookies.sanitize();
+    fn refresh(&mut self, cookies: &Cookies) {
+        self.cookies = cookies.sanitized();
     }
 
     /// 查询查询当前剩余电量 (度)
@@ -121,11 +111,11 @@ impl Querier {
             && let Ok(ct) = ct.to_str()
             && !ct.contains("application/json")
         {
-            Err(Error::Ecnu("permission denied".to_string()))?
+            Err(Error::Ecnu("permission denied".to_string()))?;
         }
         let ret: QueryResponse = resp.json().await?;
         if ret.code != 0 || ret.msg != "成功" {
-            Err(Error::Ecnu(ret.msg))?
+            Err(Error::Ecnu(ret.msg))?;
         }
         ret.degree.ok_or(Error::NoDegree)
     }
@@ -140,6 +130,7 @@ impl Querier {
         "https://epay.ecnu.edu.cn/epaycas/electric/queryelectricrooms";
 
     /// 获取学校宿舍的信息 (宿舍代码及其对应的可视值).
+    #[allow(clippy::too_many_lines)]
     pub async fn get_room_info(&self) -> crate::Result<RoomInfo> {
         if !self.room_config.is_invalid()
             && let Some(room_info) = self.room_info_cache.lock().await.get(&self.room_config)
@@ -389,7 +380,7 @@ impl Recorder {
     async fn archive(&mut self, time_span: TimeSpan) -> crate::Result<ArchiveHandle<'_>> {
         let mut out = self.out.write().await;
         out.seek(SeekFrom::Start(0)).await?;
-        let records = Records::from_csv(&mut out.deref_mut()).await?;
+        let records = Records::from_csv(&mut *out).await?;
         out.seek(SeekFrom::End(0)).await?;
         drop(out);
         let mut archived = Vec::new();
@@ -413,7 +404,7 @@ impl Recorder {
     async fn read_records(&self) -> crate::Result<Records> {
         let mut out = self.out.write().await;
         out.seek(SeekFrom::Start(0)).await?;
-        let rst = Records::from_csv(&mut out.deref_mut()).await;
+        let rst = Records::from_csv(&mut *out).await;
         out.seek(SeekFrom::End(0)).await?;
         rst
     }
@@ -427,7 +418,7 @@ struct ArchiveHandle<'a> {
     archived: Records,
 }
 
-impl<'a> ArchiveHandle<'a> {
+impl ArchiveHandle<'_> {
     /// 确认 archive 操作, 如果不执行此方法, [`Recorder::archive`] 是无任何效果的.
     async fn commit(self) -> crate::Result<()> {
         let mut out = self.recorder.out.write().await;
@@ -568,6 +559,9 @@ async fn record_loop(state: Arc<AppState>) -> ! {
 
 /// 创建并启动服务.
 pub async fn run_app() -> anyhow::Result<()> {
+    #[allow(clippy::wildcard_imports)]
+    use route::*;
+
     let data_dir = data_dir().with_context(|| "failed to access data dir")?;
     let config_dir = config_dir().with_context(|| "failed to access config dir")?;
     let log_dir = log_dir().with_context(|| "failed to access log dir")?;
@@ -594,9 +588,10 @@ pub async fn run_app() -> anyhow::Result<()> {
     };
     let room_dir = room_config
         .as_ref()
-        .map(|rc| rc.dir())
         // 可以不存在房间配置.
-        .unwrap_or_else(|_| Ok(data_dir.join(ROOM_UNKNOWN_DIRNAME)))?; // 但是不能是无效的房间配置
+        // 但是不能是无效的房间配置
+        .map_or_else(|_| Ok(data_dir.join(ROOM_UNKNOWN_DIRNAME)), RoomConfig::dir)
+        .with_context(|| "failed to create room dir")?;
     fs::create_dir_all(&room_dir)
         .await
         .with_context(|| "failed to create room dir")?;
@@ -609,7 +604,6 @@ pub async fn run_app() -> anyhow::Result<()> {
         config_dir,
         room_dir: RwLock::new(room_dir),
     });
-    use route::*;
     let router = Router::new()
         .route("/post-room", post(post_room))
         .route("/post-cookies", post(post_cookies))
@@ -679,7 +673,7 @@ async fn load_certificate_der(
     for cert_path in cert_paths {
         let root_ca = fs::read(cert_path)
             .await
-            .with_context(|| format!("read cert failed: {:?}", cert_path.as_ref()))?;
+            .with_context(|| format!("read cert failed: {}", cert_path.as_ref().display()))?;
         let mut reader = Cursor::new(root_ca);
         for cert in rustls_pemfile::certs(&mut reader) {
             certs.push(cert.with_context(|| "invalid certificate")?);

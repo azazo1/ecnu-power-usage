@@ -51,7 +51,7 @@ impl ServerConfig {
             Ok(content) => Ok(toml::from_str(&content)?),
             Err(e) => {
                 if !create_new {
-                    Err(e)?
+                    Err(e)?;
                 }
                 let default_config = Self::default();
                 fs::write(
@@ -74,10 +74,13 @@ pub struct RoomConfig {
 }
 
 impl RoomConfig {
+    #[must_use]
     pub fn empty() -> Self {
-        Default::default()
+        RoomConfig::default()
     }
 
+    #[inline]
+    #[must_use]
     pub fn is_invalid(&self) -> bool {
         self.elcarea < 0 || self.room_no.is_empty() || self.elcbuis.is_empty()
     }

@@ -81,7 +81,7 @@ pub enum KeyAlgorithm {
 }
 
 impl KeyAlgorithm {
-    fn generate_pair(&self) -> KeyPair {
+    fn generate_pair(self) -> KeyPair {
         // ring 后端暂时不支持 rsa.
         match self {
             Self::Ed25519 => KeyPair::generate_for(&PKCS_ED25519).unwrap(),
@@ -125,7 +125,7 @@ fn parse_age(age: &str) -> anyhow::Result<Duration> {
         'y' => Ok(Duration::days(val * 365)),
         'd' => Ok(Duration::days(val)),
         'h' => Ok(Duration::hours(val)),
-        _ => Err(anyhow::anyhow!("未知的时间单位: {}", unit)),
+        _ => Err(anyhow::anyhow!("未知的时间单位: {unit}")),
     }
 }
 
@@ -147,10 +147,10 @@ fn create_ca_cert(
     let key_pair = algo.generate_pair();
     let cert = params.self_signed(&key_pair)?;
 
-    write_files(out_prefix, cert.pem(), key_pair.serialize_pem())?;
+    write_files(out_prefix, &cert.pem(), &key_pair.serialize_pem())?;
     println!(
-        "根证书生成: {:?}",
-        Path::new(&out_prefix).with_added_extension("crt")
+        "根证书生成: {}",
+        Path::new(&out_prefix).with_added_extension("crt").display()
     );
     Ok(())
 }
@@ -196,12 +196,12 @@ fn create_leaf_cert(
     let key_pair = algo.generate_pair();
     let cert = params.signed_by(&key_pair, issuer)?;
 
-    write_files(out_prefix, cert.pem(), key_pair.serialize_pem())?;
+    write_files(out_prefix, &cert.pem(), &key_pair.serialize_pem())?;
     println!(
-        "{} 证书密钥对生成: {:?} / {:?}",
+        "{} 证书密钥对生成: {} / {}",
         if is_client { "客户端" } else { "服务端" },
-        Path::new(&out_prefix).with_added_extension("crt"),
-        Path::new(&out_prefix).with_added_extension("key")
+        Path::new(&out_prefix).with_added_extension("crt").display(),
+        Path::new(&out_prefix).with_added_extension("key").display()
     );
     Ok(())
 }
@@ -215,7 +215,7 @@ fn load_ca_cert_issuer(prefix: impl AsRef<Path>) -> anyhow::Result<Issuer<'stati
 }
 
 // 在 write_files 中调用
-fn write_files(prefix: impl AsRef<Path>, cert_pem: String, key_pem: String) -> anyhow::Result<()> {
+fn write_files(prefix: impl AsRef<Path>, cert_pem: &str, key_pem: &str) -> anyhow::Result<()> {
     let cert_path = prefix.as_ref().with_added_extension("crt");
     let key_path = prefix.as_ref().with_added_extension("key");
 

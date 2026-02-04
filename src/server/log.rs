@@ -10,7 +10,7 @@ use tokio::fs;
 
 /// 初始化日志输出
 ///
-/// 使用 RUST_LOG 控制日志程度.
+/// 使用 `RUST_LOG` 控制日志程度.
 pub(crate) async fn init(log_dir: impl AsRef<Path>) -> crate::Result<WorkerGuard> {
     let log_dir = log_dir.as_ref();
     if !log_dir.exists() {
