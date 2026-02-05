@@ -1,5 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-use std::{error::Error, path::PathBuf};
+use std::{error::Error, path::PathBuf, time::Duration};
 
 use chromiumoxide::BrowserConfig;
 use chrono::{DateTime, FixedOffset};
@@ -14,7 +14,9 @@ use tokio::{fs, sync::oneshot};
 use tracing::{error, info};
 
 use crate::{
-    config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig}, health::HealthStatus, online
+    config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig},
+    health::HealthStatus,
+    online,
 };
 
 trait IsTlsError {
@@ -180,7 +182,7 @@ pub(crate) async fn health_check(app_state: State<'_, AppState>) -> Result<Healt
         Err(ecnu_power_usage::Error::CS(CSError::RoomConfigMissing)) => Ok(HealthStatus::NoRoom),
         Err(ecnu_power_usage::Error::Reqwest(e)) => {
             error!(target: "health check reqwest", "{e:?}");
-            if online::check(None).await {
+            if online::check(Some(Duration::from_secs(1))).await {
                 if e.is_tls_error() {
                     Ok(HealthStatus::TlsError)
                 } else {
