@@ -44,6 +44,7 @@ dashmap = "6.1.0"
 tauri-plugin-notification = "2.3.3"
 dirs-next = "2.0.0"
 tauri-plugin-single-instance = "2.3.7"
+futures-util = "0.3.31"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

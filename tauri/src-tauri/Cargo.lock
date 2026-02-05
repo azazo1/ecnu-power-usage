@@ -1263,6 +1263,7 @@ dependencies = [
  "dashmap",
  "dirs-next",
  "ecnu-power-usage",
+ "futures-util",
  "hyper",
  "objc2",
  "objc2-app-kit",

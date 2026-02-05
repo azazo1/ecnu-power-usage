@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-const ADDRS: &[&str] = &[
+use futures_util::StreamExt;
+
+const ADDRS: [&str; 4] = [
     "https://www.baidu.com",
     "https://google.com",
     "https://www.mozilla.org",
@@ -25,22 +27,23 @@ async fn connect(addr: &str, client: &reqwest::Client) -> bool {
 pub async fn check(timeout: Option<Duration>) -> bool {
     // Avoiding `io:timeout` in this case to allow the OS decide for
     // better diagnostics.
-    let client = reqwest::Client::default();
     let mut online = false;
-    if let Some(dur) = timeout {
-        // First try, ignoring error (if any).
-        for addr in ADDRS {
-            if connect_timeout(addr, dur, &client).await {
-                online = true;
-                break;
+    // 非常奇怪的生命周期问题,我这里如果不对 ADDR 执行 to_string, 就会报错,
+    // 而且不是在这里报错, 而是在 tauri 调用的位置报错.
+    let mut stream = futures_util::stream::iter(ADDRS.map(str::to_string))
+        .map(|addr| async move {
+            let client = reqwest::Client::default();
+            if let Some(dur) = timeout {
+                connect_timeout(&addr, dur, &client).await
+            } else {
+                connect(&addr, &client).await
             }
-        }
-    } else {
-        for addr in ADDRS {
-            if connect(addr, &client).await {
-                online = true;
-                break;
-            }
+        })
+        .buffer_unordered(3);
+    while let Some(c) = stream.next().await {
+        if c {
+            online = true;
+            break;
         }
     }
     online
