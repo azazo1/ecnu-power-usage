@@ -1,18 +1,20 @@
 use anyhow::Context;
+use chromiumoxide::BrowserConfig;
+use tauri::WindowEvent;
+use tracing::warn;
 
 mod commands;
 mod config;
 mod error;
+mod health;
 mod log;
 mod online;
 mod tray;
 
-use chromiumoxide::BrowserConfig;
 use commands::*;
 use config::AppState;
 use error::{Error, Result};
-use tauri::WindowEvent;
-use tracing::warn;
+use health::init_health_check_routine;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() -> anyhow::Result<()> {
@@ -47,6 +49,11 @@ pub async fn run() -> anyhow::Result<()> {
             quit_app
         ])
         .setup(|app| Ok(tray::init_tray(app)?))
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move { init_health_check_routine(handle).await });
+            Ok(())
+        })
         .on_window_event(|window, evt| {
             if window.label() != "main" {
                 return;

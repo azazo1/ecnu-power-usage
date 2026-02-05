@@ -7,7 +7,6 @@ use ecnu_power_usage::{
     ArchiveMeta, CSError, Cookies, Records, TimeSpan, client::BrowserExecutor, config::RoomConfig,
     rooms::RoomInfo,
 };
-use serde::Serialize;
 use tauri::State;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
@@ -15,8 +14,7 @@ use tokio::{fs, sync::oneshot};
 use tracing::{error, info};
 
 use crate::{
-    config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig},
-    online,
+    config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig}, health::HealthStatus, online
 };
 
 trait IsTlsError {
@@ -174,17 +172,6 @@ pub(crate) async fn get_degree(app_state: State<'_, AppState>) -> Result<f32, St
         .map_err(|e| e.to_string())
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub(crate) enum HealthStatus {
-    Ok,
-    NoRoom,
-    NotLogin,
-    ServerDown,
-    NoNet,
-    TlsError,
-}
-
 #[tauri::command]
 pub(crate) async fn health_check(app_state: State<'_, AppState>) -> Result<HealthStatus, String> {
     match app_state.client.read().await.get_degree().await {
@@ -192,7 +179,7 @@ pub(crate) async fn health_check(app_state: State<'_, AppState>) -> Result<Healt
         Err(ecnu_power_usage::Error::CS(CSError::EcnuNotLogin)) => Ok(HealthStatus::NotLogin),
         Err(ecnu_power_usage::Error::CS(CSError::RoomConfigMissing)) => Ok(HealthStatus::NoRoom),
         Err(ecnu_power_usage::Error::Reqwest(e)) => {
-            error!("health check reqwest: {e:?}");
+            error!(target: "health check reqwest", "{e:?}");
             if online::check(None).await {
                 if e.is_tls_error() {
                     Ok(HealthStatus::TlsError)
@@ -203,7 +190,10 @@ pub(crate) async fn health_check(app_state: State<'_, AppState>) -> Result<Healt
                 Ok(HealthStatus::NoNet)
             }
         }
-        Err(e) => Err(e.to_string()),
+        Err(e) => {
+            error!(target: "error checking", "{e:?}");
+            Err(e.to_string())
+        }
     }
 }
 
@@ -279,7 +269,7 @@ pub(crate) fn sys_notify(
         .body(&message)
         .show()
         .map_err(|e| {
-            error!("notification error: {e:?}");
+            error!(target: "notification error", "{e:?}");
             format!("notification error: {e}")
         })
 }

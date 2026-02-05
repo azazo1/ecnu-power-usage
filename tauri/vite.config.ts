@@ -33,7 +33,7 @@ export default defineConfig(async () => ({
   // 构建优化配置
   build: {
     // 提高 chunk 大小警告限制
-    chunkSizeWarningLimit: 500,
+    chunkSizeWarningLimit: 600,
 
     rollupOptions: {
       output: {

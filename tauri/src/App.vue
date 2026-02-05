@@ -113,7 +113,6 @@ import { Archive, ArchiveMeta, createArchiveCmd, deleteArchiveCmd, downloadArchi
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { healthCheckCmd, HealthStatus } from "./utils/health";
 import { GuiConfig } from "./utils/config";
-import { sysNotify } from "./utils/notify";
 
 // 使用懒加载组件
 const DataVisualizer = defineAsyncComponent(() => import("./components/DataVisualizer.vue"));
@@ -267,15 +266,6 @@ onMounted(async () => {
     }, 5000);
 });
 
-const notifyConfig = {
-    NoNet: { title: '网络已断开', msg: '请检查网络设置。' },
-    ServerDown: { title: '服务器连接失败', msg: '后端服务暂时无法访问。' },
-    NotLogin: { title: '登录已过期', msg: '请重新登录以继续。' },
-    NoRoom: { title: '房间未绑定', msg: '请先配置您的宿舍房间号。' },
-    TlsError: { title: '安全连接失败', msg: '证书校验无效，连接已终止。' },
-    Unknown: { title: '系统错误', msg: '发生未知异常。' }
-};
-
 // 执行检查并更新状态
 async function performHealthCheck(): Promise<HealthStatus> {
     const rawStatus = currentHealth.value;
@@ -291,8 +281,9 @@ async function performHealthCheck(): Promise<HealthStatus> {
             refreshArchives();
             refreshSelectedArchive();
         } else {
-            const config = notifyConfig[status.kind] || notifyConfig.Unknown;
-            sysNotify(config.title, config.msg);
+            // 现在使用 tauri 侧进行检测和系统通知通知.
+            // const config = notifyConfig[status.kind] || notifyConfig.Unknown;
+            // sysNotify(config.title, config.msg);
         }
     } else if (status.message !== rawStatus.message) {
         // 如果 kind 没变但 message 变了也更新一下
