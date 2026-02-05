@@ -1,5 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-use std::{error::Error, path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 use chromiumoxide::BrowserConfig;
 use chrono::{DateTime, FixedOffset};
@@ -16,38 +16,7 @@ use tracing::{error, info};
 use crate::{
     config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig},
     health::HealthStatus,
-    online,
 };
-
-trait IsTlsError {
-    fn is_tls_error(&self) -> bool;
-}
-
-impl IsTlsError for reqwest::Error {
-    fn is_tls_error(&self) -> bool {
-        let mut source = self.source();
-
-        while let Some(err) = source {
-            if let Some(hyper_err) = err.downcast_ref::<hyper::Error>()
-                && hyper_err.is_parse()
-            {
-                return true;
-            }
-            let src_str = format!("{}", err).to_lowercase();
-            if src_str.contains("tls")
-                || src_str.contains("certificate")
-                || src_str.contains("handshake")
-                || src_str.contains("invaliddata")
-                || src_str.contains("invalidcontenttype")
-            {
-                return true;
-            }
-            source = err.source();
-        }
-
-        false
-    }
-}
 
 #[tauri::command]
 pub(crate) fn crate_version() -> &'static str {
@@ -176,27 +145,7 @@ pub(crate) async fn get_degree(app_state: State<'_, AppState>) -> Result<f32, St
 
 #[tauri::command]
 pub(crate) async fn health_check(app_state: State<'_, AppState>) -> Result<HealthStatus, String> {
-    match app_state.client.read().await.get_degree().await {
-        Ok(_) => Ok(HealthStatus::Ok),
-        Err(ecnu_power_usage::Error::CS(CSError::EcnuNotLogin)) => Ok(HealthStatus::NotLogin),
-        Err(ecnu_power_usage::Error::CS(CSError::RoomConfigMissing)) => Ok(HealthStatus::NoRoom),
-        Err(ecnu_power_usage::Error::Reqwest(e)) => {
-            error!(target: "health check reqwest", "{e:?}");
-            if online::check(Some(Duration::from_secs(1))).await {
-                if e.is_tls_error() {
-                    Ok(HealthStatus::TlsError)
-                } else {
-                    Ok(HealthStatus::ServerDown)
-                }
-            } else {
-                Ok(HealthStatus::NoNet)
-            }
-        }
-        Err(e) => {
-            error!(target: "error checking", "{e:?}");
-            Err(e.to_string())
-        }
-    }
+    app_state.health.read().await.clone()
 }
 
 #[tauri::command]

@@ -1,13 +1,11 @@
-use std::{fmt::Display, time::Duration};
+use std::{error::Error, fmt::Display, time::Duration};
 
+use ecnu_power_usage::CSError;
 use serde::Serialize;
-use tauri::Manager;
-use tracing::info;
+use tauri::{Manager, State};
+use tracing::{error, info};
 
-use crate::{
-    commands::{health_check, sys_notify},
-    config::AppState,
-};
+use crate::{commands::sys_notify, config::AppState, online};
 
 #[derive(Serialize, Debug, Clone, Copy, Eq, PartialEq)]
 #[serde(rename_all = "PascalCase")]
@@ -36,12 +34,67 @@ fn get_notify_content<T: Display>(health: Result<HealthStatus, T>) -> (String, S
     }
 }
 
+trait IsTlsError {
+    fn is_tls_error(&self) -> bool;
+}
+
+impl IsTlsError for reqwest::Error {
+    fn is_tls_error(&self) -> bool {
+        let mut source = self.source();
+
+        while let Some(err) = source {
+            if let Some(hyper_err) = err.downcast_ref::<hyper::Error>()
+                && hyper_err.is_parse()
+            {
+                return true;
+            }
+            let src_str = format!("{}", err).to_lowercase();
+            if src_str.contains("tls")
+                || src_str.contains("certificate")
+                || src_str.contains("handshake")
+                || src_str.contains("invaliddata")
+                || src_str.contains("invalidcontenttype")
+            {
+                return true;
+            }
+            source = err.source();
+        }
+
+        false
+    }
+}
+
+async fn health_check(app_state: State<'_, AppState>) -> Result<HealthStatus, String> {
+    match app_state.client.read().await.get_degree().await {
+        Ok(_) => Ok(HealthStatus::Ok),
+        Err(ecnu_power_usage::Error::CS(CSError::EcnuNotLogin)) => Ok(HealthStatus::NotLogin),
+        Err(ecnu_power_usage::Error::CS(CSError::RoomConfigMissing)) => Ok(HealthStatus::NoRoom),
+        Err(ecnu_power_usage::Error::Reqwest(e)) => {
+            error!(target: "health check reqwest", "{e:?}");
+            if online::check(Some(Duration::from_secs(1))).await {
+                if e.is_tls_error() {
+                    Ok(HealthStatus::TlsError)
+                } else {
+                    Ok(HealthStatus::ServerDown)
+                }
+            } else {
+                Ok(HealthStatus::NoNet)
+            }
+        }
+        Err(e) => {
+            error!(target: "error checking", "{e:?}");
+            Err(e.to_string())
+        }
+    }
+}
+
 pub(crate) async fn init_health_check_routine(handle: tauri::AppHandle) -> ! {
     let mut health = HealthStatus::Ok;
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
         let state = handle.state::<AppState>();
-        let check = health_check(state).await;
+        let check = health_check(state.clone()).await;
+        *state.health.write().await = check.clone();
         let new_health = match &check {
             Ok(h) => *h,
             Err(_) => HealthStatus::Unknown,

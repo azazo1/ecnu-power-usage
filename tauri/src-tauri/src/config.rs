@@ -10,6 +10,8 @@ use tokio::{
 };
 use tracing::{info, warn};
 
+use crate::health::HealthStatus;
+
 pub(crate) async fn log_dir() -> crate::Result<PathBuf> {
     let default = shellexpand::tilde("~/.local/share");
     let dir = dirs_next::data_dir()
@@ -144,6 +146,7 @@ async fn import_tls(
 pub(crate) struct AppState {
     pub(crate) config: RwLock<GuiConfig>,
     pub(crate) client: RwLock<Client>,
+    pub(crate) health: RwLock<Result<HealthStatus, String>>,
 }
 
 impl AppState {
@@ -152,6 +155,7 @@ impl AppState {
         let this = Self {
             client: RwLock::new(Client::new(config.server_base.clone())),
             config: RwLock::new(GuiConfig::default()),
+            health: RwLock::new(Ok(HealthStatus::Ok)),
         };
         this.set_config(config).await?;
         Ok(this)
