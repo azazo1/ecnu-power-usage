@@ -7,7 +7,7 @@ use tracing::debug;
 
 use crate::error::Error;
 
-fn focus_window(app: &AppHandle) {
+pub(crate) fn focus_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();

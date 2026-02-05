@@ -1,7 +1,7 @@
 use anyhow::Context;
 use chromiumoxide::BrowserConfig;
 use tauri::WindowEvent;
-use tracing::warn;
+use tracing::{info, warn};
 
 mod commands;
 mod config;
@@ -26,6 +26,11 @@ pub async fn run() -> anyhow::Result<()> {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            info!(target: "second instance", "argv: {argv:?}, cwd: {cwd:?}");
+            // 当第二个实例尝试启动时, 聚焦主窗口
+            tray::focus_window(app);
+        }))
         .manage(AppState::load().await?)
         .manage(BrowserConfig::builder().with_head().build().unwrap())
         .invoke_handler(tauri::generate_handler![
@@ -48,8 +53,9 @@ pub async fn run() -> anyhow::Result<()> {
             get_room_info,
             quit_app
         ])
-        .setup(|app| Ok(tray::init_tray(app)?))
         .setup(|app| {
+            // setup 只能调用一次
+            tray::init_tray(app)?;
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { init_health_check_routine(handle).await });
             Ok(())
