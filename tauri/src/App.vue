@@ -113,6 +113,7 @@ import { Archive, ArchiveMeta, createArchiveCmd, deleteArchiveCmd, downloadArchi
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { healthCheckCmd, HealthStatus } from "./utils/health";
 import { GuiConfig } from "./utils/config";
+import { isEqual } from 'lodash-es';
 
 // 使用懒加载组件
 const DataVisualizer = defineAsyncComponent(() => import("./components/DataVisualizer.vue"));
@@ -156,7 +157,10 @@ onUnmounted(() => {
 
 async function refreshRecords() {
     try {
-        currentRecords.value = await getRecords();
+        let newRecords = await getRecords();
+        if (!isEqual(newRecords, currentRecords.value)) {
+            currentRecords.value = newRecords;
+        }
     } catch (e) {
         notifyError("获取当前记录失败", `获取内容失败: ${e}`);
     }
