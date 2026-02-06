@@ -304,7 +304,7 @@ const selectionStats = computed(() => {
     const first = subset[0];
     const last = subset[subset.length - 1];
 
-    const totalConsumed = Math.abs(first.kwh - last.kwh);
+    const totalConsumed = Math.max(first.kwh - last.kwh, 0);
     const minutes = Math.abs(
         differenceInMinutes(last.timestamp, first.timestamp),
     );
@@ -489,7 +489,7 @@ const windowStats = computed(() => {
 
     const first = subset[0];
     const last = subset[subset.length - 1];
-    const consumed = Math.abs(first.kwh - last.kwh);
+    const consumed = Math.max(first.kwh - last.kwh, 0);
     const hours = Math.abs(differenceInMinutes(last.timestamp, first.timestamp)) / 60;
 
     return {
@@ -504,7 +504,7 @@ const totalStats = computed(() => {
     if (props.data.length < 2) return null;
     const first = props.data[0];
     const last = props.data[props.data.length - 1];
-    const consumed = Math.abs(first.kwh - last.kwh);
+    const consumed = Math.max(first.kwh - last.kwh, 0);
     const hours = Math.abs(differenceInMinutes(last.timestamp, first.timestamp)) / 60;
 
     return {
