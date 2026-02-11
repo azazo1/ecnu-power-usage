@@ -7,6 +7,8 @@ use tracing::{error, info};
 
 use crate::{commands::sys_notify, config::AppState, online};
 
+const NOTIFICATION_TOLERANCE_TIMES: usize = 3;
+
 #[derive(Serialize, Debug, Clone, Copy, Eq, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) enum HealthStatus {
@@ -88,8 +90,9 @@ async fn health_check(app_state: State<'_, AppState>) -> Result<HealthStatus, St
     }
 }
 
-pub(crate) async fn init_health_check_routine(handle: tauri::AppHandle) -> ! {
+pub(crate) async fn health_check_routine(handle: tauri::AppHandle) -> ! {
     let mut health = HealthStatus::Ok;
+    let mut network_err_count = 0;
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
         let state = handle.state::<AppState>();
@@ -100,6 +103,20 @@ pub(crate) async fn init_health_check_routine(handle: tauri::AppHandle) -> ! {
             Err(_) => HealthStatus::Unknown,
         };
         if new_health != health {
+            info!(target: "health", "new: {new_health:?}");
+            if matches!(
+                (health, new_health),
+                (HealthStatus::Ok, HealthStatus::NoNet)
+                    | (HealthStatus::Ok, HealthStatus::ServerDown)
+            ) {
+                if network_err_count < NOTIFICATION_TOLERANCE_TIMES {
+                    network_err_count += 1;
+                    continue;
+                }
+            } else {
+                network_err_count = 0;
+            }
+
             info!("health status changed {health:?} -> {new_health:?}.");
             if new_health != HealthStatus::Ok {
                 let (title, message) = get_notify_content(check);

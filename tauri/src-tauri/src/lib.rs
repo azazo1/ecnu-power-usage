@@ -14,7 +14,7 @@ mod tray;
 use commands::*;
 use config::AppState;
 use error::{Error, Result};
-use health::init_health_check_routine;
+use health::health_check_routine;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() -> anyhow::Result<()> {
@@ -57,7 +57,7 @@ pub async fn run() -> anyhow::Result<()> {
             // setup 只能调用一次
             tray::init_tray(app)?;
             let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move { init_health_check_routine(handle).await });
+            tauri::async_runtime::spawn(async move { health_check_routine(handle).await });
             Ok(())
         })
         .on_window_event(|window, evt| {
