@@ -1,3 +1,5 @@
+//! 检测屏幕休眠状态
+
 #[cfg(target_os = "macos")]
 mod macos {
     use core::ffi::c_uint;
@@ -39,5 +41,25 @@ mod macos {
     }
 }
 
+#[cfg(target_os = "linux")]
+mod linux {
+    pub(crate) fn all_displays_asleep() -> crate::Result<bool> {
+        Ok(false)
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod windows {
+    pub(crate) fn all_displays_asleep() -> crate::Result<bool> {
+        Ok(false)
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) use macos::*;
+
+#[cfg(target_os = "linux")]
+pub(crate) use linux::*;
+
+#[cfg(target_os = "windows")]
+pub(crate) use windows::*;
