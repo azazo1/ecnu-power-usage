@@ -37,6 +37,8 @@ pub(crate) async fn degree_check_routine(handle: tauri::AppHandle) -> ! {
                     }
 
                     last_notify_time = Some(Instant::now());
+                } else {
+                    last_notify_time = None;
                 }
             }
             Err(e) => {

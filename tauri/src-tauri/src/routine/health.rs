@@ -95,6 +95,7 @@ pub(crate) async fn health_check_routine(handle: tauri::AppHandle) -> ! {
     let mut network_err_count = 0;
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
+
         let state = handle.state::<AppState>();
         let check = health_check(state.clone()).await;
         *state.health.write().await = check.clone();
@@ -118,11 +119,12 @@ pub(crate) async fn health_check_routine(handle: tauri::AppHandle) -> ! {
             }
 
             info!("health status changed {health:?} -> {new_health:?}.");
+            health = new_health;
+
             if new_health != HealthStatus::Ok {
                 let (title, message) = get_notify_content(check);
-                sys_notify(handle.clone(), title, message).ok(); // 内部有错误输出.
+                sys_notify(handle.clone(), title, message).ok(); // 内部有错误输出, 不需要在系统通知中体现.
             }
-            health = new_health;
         }
     }
 }

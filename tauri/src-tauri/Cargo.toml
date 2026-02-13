@@ -37,7 +37,9 @@ anyhow = "1.0.100"
 tracing-appender = "0.2.4"
 chromiumoxide = "0.8.0"
 chrono = { version = "0.4.43", features = ["serde"] }
-reqwest = { version = "0.13.1", features = ["rustls"], default-features = false }
+reqwest = { version = "0.13.1", features = [
+    "rustls",
+], default-features = false }
 tauri-plugin-dialog = "2.6.0"
 hyper = "1.8.1"
 dashmap = "6.1.0"
@@ -52,3 +54,7 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+[features]
+default = ["display-detecting"]
+display-detecting = []

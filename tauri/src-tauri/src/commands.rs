@@ -214,6 +214,15 @@ pub(crate) fn sys_notify(
     title: String,
     message: String,
 ) -> Result<(), String> {
+    #[cfg(feature = "display-detecting")]
+    {
+        use crate::display::all_displays_asleep;
+
+        if all_displays_asleep().is_ok_and(|x| x) {
+            return Ok(());
+        }
+    }
+
     app.notification()
         .builder()
         .title(&title)

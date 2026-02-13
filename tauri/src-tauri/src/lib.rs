@@ -5,6 +5,8 @@ use tracing::{info, warn};
 
 mod commands;
 mod config;
+#[cfg(feature = "display-detecting")]
+mod display;
 mod error;
 mod log;
 mod online;

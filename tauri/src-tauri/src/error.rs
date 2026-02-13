@@ -19,7 +19,9 @@ pub(crate) enum Error {
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
     #[error(transparent)]
-    Tauri(#[from] tauri::Error)
+    Tauri(#[from] tauri::Error),
+    #[error("display detecting: {0}")]
+    Display(i32),
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
