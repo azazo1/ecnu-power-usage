@@ -6,15 +6,16 @@ use tracing::{info, warn};
 mod commands;
 mod config;
 mod error;
-mod health;
 mod log;
 mod online;
+mod routine;
 mod tray;
 
 use commands::*;
 use config::AppState;
 use error::{Error, Result};
-use health::health_check_routine;
+use routine::degree::degree_check_routine;
+use routine::health::health_check_routine;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() -> anyhow::Result<()> {
@@ -58,6 +59,9 @@ pub async fn run() -> anyhow::Result<()> {
             tray::init_tray(app)?;
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { health_check_routine(handle).await });
+
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move { degree_check_routine(handle).await });
             Ok(())
         })
         .on_window_event(|window, evt| {

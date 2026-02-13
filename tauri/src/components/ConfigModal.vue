@@ -34,6 +34,19 @@
                             </div>
                         </div>
 
+                        <div>
+                            <label class="form-label small fw-bold text-secondary mb-1">电量阈值 (度)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-0 text-secondary"><i
+                                        class="bi bi-lightning-charge"></i></span>
+                                <input v-model.number="config.degreeThreshold" type="number" step="0.1" min="0"
+                                    max="999" class="form-control bg-light border-0" placeholder="10.0" required>
+                            </div>
+                            <div class="form-text x-small text-muted mt-1">
+                                当宿舍剩余电量低于此值时，将会发送系统通知提醒。
+                            </div>
+                        </div>
+
                         <div class="p-3 bg-light bg-opacity-50 rounded-4 border border-secondary border-opacity-10">
                             <div class="d-flex justify-content-between align-items-center cursor-pointer user-select-none"
                                 @click="toggleShowTls">
@@ -234,7 +247,8 @@ const roomInfoError = ref(false);
 
 const config = ref<GuiConfig>({
     serverBase: '',
-    useSelfSignedTls: false
+    useSelfSignedTls: false,
+    degreeThreshold: 10.0
 });
 
 // 判断证书是否全部填写

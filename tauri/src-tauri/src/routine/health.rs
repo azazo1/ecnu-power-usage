@@ -7,7 +7,7 @@ use tracing::{error, info};
 
 use crate::{commands::sys_notify, config::AppState, online};
 
-const NOTIFICATION_TOLERANCE_TIMES: usize = 3;
+const NETWORK_TOLERANCE_TIMES: usize = 3;
 
 #[derive(Serialize, Debug, Clone, Copy, Eq, PartialEq)]
 #[serde(rename_all = "PascalCase")]
@@ -109,7 +109,7 @@ pub(crate) async fn health_check_routine(handle: tauri::AppHandle) -> ! {
                 (HealthStatus::Ok, HealthStatus::NoNet)
                     | (HealthStatus::Ok, HealthStatus::ServerDown)
             ) {
-                if network_err_count < NOTIFICATION_TOLERANCE_TIMES {
+                if network_err_count < NETWORK_TOLERANCE_TIMES {
                     network_err_count += 1;
                     continue;
                 }

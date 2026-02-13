@@ -5,7 +5,8 @@ export interface GuiConfig {
     clientCert?: string;
     clientKey?: string;
     rootCA?: string;
-    useSelfSignedTls: boolean
+    useSelfSignedTls: boolean;
+    degreeThreshold: number;
 }
 
 export interface Area {

@@ -10,7 +10,7 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-use crate::health::HealthStatus;
+use crate::routine::health::HealthStatus;
 
 pub(crate) async fn log_dir() -> crate::Result<PathBuf> {
     let default = shellexpand::tilde("~/.local/share");
@@ -53,12 +53,18 @@ pub(crate) struct GuiConfig {
     root_ca: Option<PathBuf>,
     #[serde(default)]
     use_self_signed_tls: bool,
+    #[serde(default = "default_degree_threshold")]
+    degree_threshold: f32,
 }
 
 impl Default for GuiConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }
+}
+
+fn default_degree_threshold() -> f32 {
+    10.0
 }
 
 fn default_server_base() -> Url {
@@ -80,6 +86,10 @@ impl GuiConfig {
     pub(crate) async fn save_config(&self) -> crate::Result<()> {
         let config_path = config_dir().await?.join(CONFIG_FILENAME);
         Ok(fs::write(config_path, toml::to_string_pretty(self)?.as_bytes()).await?)
+    }
+
+    pub(crate) fn degree_threshold(&self) -> f32 {
+        self.degree_threshold
     }
 }
 

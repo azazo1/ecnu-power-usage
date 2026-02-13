@@ -15,7 +15,7 @@ use tracing::{error, info};
 
 use crate::{
     config::{self, ARCHIVE_CACHE_DIRNAME, AppState, GuiConfig},
-    health::HealthStatus,
+    routine::health::HealthStatus,
 };
 
 #[tauri::command]
