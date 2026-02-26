@@ -348,7 +348,7 @@ pub(super) async fn list_archives(
             .filter(|s| {
                 Path::new(s)
                     .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case(".toml"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
             })
             .map(|s: &str| s.to_string())
         else {
