@@ -20,10 +20,11 @@
 
                 <div v-for="arc in archiveList" :key="arc.name" class="col-md-6 col-lg-4">
                     <div @click="$emit('open', arc.name)"
-                        class="card h-100 border-success border-opacity-50 hover-card cursor-pointer rounded-4 shadow-sm"
+                        class="card h-100 border-success border-opacity-50 hover-card cursor-pointer rounded-4 shadow-sm archive-card"
                         :class="{ 'hover-card-disabled': deleteTarget }">
                         <!-- 删除归档按钮 -->
-                        <div class="position-absolute top-0 end-0 p-3" style="z-index: 1050;">
+                        <div class="position-absolute top-0 end-0 p-3 delete-archive-action"
+                            :class="{ 'is-active': deleteTarget === arc.name }" style="z-index: 10;">
                             <button @click.stop="deleteTarget = arc.name"
                                 class="btn btn-sm btn-light text-success border-0 rounded-circle shadow-sm hover-scale d-flex align-items-center justify-content-center"
                                 style="width: 32px; height: 32px;" title="删除归档">
@@ -97,6 +98,18 @@
 
 .hover-card:not(.hover-card-disabled):hover .hover-icon {
     transform: rotate(5deg) scale(1.1);
+}
+
+.delete-archive-action {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.archive-card:not(.hover-card-disabled):hover .delete-archive-action,
+.archive-card .delete-archive-action.is-active {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .cursor-pointer {
