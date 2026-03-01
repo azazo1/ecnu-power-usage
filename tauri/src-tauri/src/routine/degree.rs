@@ -9,6 +9,7 @@ const NOTIFY_INTERVAL: Duration = Duration::from_mins(30);
 
 pub(crate) async fn degree_check_routine(handle: tauri::AppHandle) -> ! {
     let mut last_notify_time: Option<Instant> = None;
+    let mut last_degree: Option<f32> = None;
 
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -40,6 +41,25 @@ pub(crate) async fn degree_check_routine(handle: tauri::AppHandle) -> ! {
                 } else {
                     last_notify_time = None;
                 }
+
+                if let Some(last_degree_) = last_degree
+                    && degree > last_degree_
+                {
+                    if let Err(e) = sys_notify(
+                        handle.clone(),
+                        "宿舍电量增加".to_string(),
+                        format!(
+                            "宿舍电量增加: {:.2} 度, 现有 {:.2} 度",
+                            degree - last_degree_,
+                            degree
+                        ),
+                    ) {
+                        error!(target: "degree notification", "failed to send notification: {e}");
+                    } else {
+                        info!(target: "degree notification", "degree increasing notification sent: {:.2} -> {:.2}", last_degree_, degree);
+                    };
+                }
+                last_degree = Some(degree);
             }
             Err(e) => {
                 // 获取电量失败时记录错误，但不发送通知（避免干扰用户）
