@@ -396,8 +396,8 @@ const chartOption = computed(() => {
                 axisLabel: { color: "#059669", fontWeight: "500" },
                 axisLine: { lineStyle: { color: "#10b981", width: 2 } },
                 splitLine: { show: true, lineStyle: { type: "dashed", color: "#d1fae5" } },
-                min: (value: any) => (value.min - (value.max - value.min) * 0.1).toFixed(1),
-                max: (value: any) => (value.max + (value.max - value.min) * 0.1).toFixed(1),
+                min: 0,
+                max: (value: any) => (value.max + (value.max - value.min) * 0.1).toFixed(1)
             },
             {
                 type: "value",
@@ -407,6 +407,8 @@ const chartOption = computed(() => {
                 axisLabel: { color: "#f97316", fontWeight: "500" },
                 axisLine: { lineStyle: { color: "#f97316", width: 2 } },
                 splitLine: { show: false },
+                min: 0,
+                // max: (value: any) => getAxisMax(value),
             },
         ],
         series: [
