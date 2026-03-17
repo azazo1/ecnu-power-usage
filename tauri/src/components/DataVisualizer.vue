@@ -472,13 +472,11 @@ const handleDataZoom = (params: any) => {
     }
 };
 
-// 计算当前窗口的统计信息
-const windowStats = computed(() => {
+// 计算某个区间的统计信息.
+//
+// start, end: timestamp
+function calcStats(start: number, end: number) {
     if (!props.data.length) return null;
-
-    // 如果还没触发过缩放，默认显示全部
-    const start = chartWindowRange.value.startValue || props.data[0].timestamp.getTime();
-    const end = chartWindowRange.value.endValue || props.data[props.data.length - 1].timestamp.getTime();
 
     const subset = props.data.filter(d => {
         const t = d.timestamp.getTime();
@@ -487,31 +485,53 @@ const windowStats = computed(() => {
 
     if (subset.length < 2) return null;
 
-    const first = subset[0];
-    const last = subset[subset.length - 1];
-    const consumed = Math.max(first.kwh - last.kwh, 0);
-    const hours = Math.abs(differenceInMinutes(last.timestamp, first.timestamp)) / 60;
+    subset.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+    const windows: [ElectricityRecord, ElectricityRecord?][] = [];
+    for (const current of subset) {
+        if (windows.length === 0) {
+            windows.push([current, undefined]);
+        } else {
+            const lastStartKwh = windows[windows.length - 1][0].kwh;
+            const lastEndKwh = windows[windows.length - 1][1]?.kwh;
+            if (current.kwh > lastStartKwh || (lastEndKwh !== undefined && lastEndKwh < current.kwh)) {
+                windows.push([current, undefined]);
+            } else {
+                windows[windows.length - 1][1] = current;
+            }
+        }
+    }
+
+    let windowsHours = 0;
+    let windowsConsumed = 0;
+    for (const [first, last] of windows) {
+        if (last === undefined) { continue; }
+        const consumed = Math.max(first.kwh - last.kwh, 0);
+        const hours = Math.abs(differenceInMinutes(last.timestamp, first.timestamp)) / 60;
+        windowsHours += hours;
+        windowsConsumed += consumed;
+    }
 
     return {
-        consumed: consumed.toFixed(2),
-        speed: hours > 0 ? ((consumed / hours) * 24).toFixed(2) : "0.00",
-        hours: hours.toFixed(1)
+        consumed: windowsConsumed.toFixed(2),
+        speed: windowsHours > 0 ? ((windowsConsumed / windowsHours) * 24).toFixed(2) : "0.00",
+        hours: windowsHours.toFixed(1)
     };
+}
+
+// 计算当前窗口的统计信息
+const windowStats = computed(() => {
+    // 如果还没触发过缩放，默认显示全部
+    const start = chartWindowRange.value.startValue || props.data[0].timestamp.getTime();
+    const end = chartWindowRange.value.endValue || props.data[props.data.length - 1].timestamp.getTime();
+
+    return calcStats(start, end);
 });
 
 // 计算全部数据的统计信息
 const totalStats = computed(() => {
-    if (props.data.length < 2) return null;
-    const first = props.data[0];
-    const last = props.data[props.data.length - 1];
-    const consumed = Math.max(first.kwh - last.kwh, 0);
-    const hours = Math.abs(differenceInMinutes(last.timestamp, first.timestamp)) / 60;
-
-    return {
-        consumed: consumed.toFixed(2),
-        speed: hours > 0 ? ((consumed / hours) * 24).toFixed(2) : "0.00",
-        hours: hours.toFixed(1)
-    };
+    if (props.data.length === 0) { return null; }
+    return calcStats(props.data[0].timestamp.getTime(), props.data[props.data.length - 1].timestamp.getTime());
 });
 
 const openArchiveFile = async () => {
